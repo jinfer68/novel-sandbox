@@ -94,6 +94,42 @@ novel-sandbox/
 └── package.json
 ```
 
+### 各檔案說明
+
+#### 進入點
+
+| 檔案 | 說明 |
+|------|------|
+| `index.html` | HTML 進入點，掛載 `#root` 並載入 `src/main.jsx` |
+| `src/main.jsx` | React 進入點，將 `<App />` 渲染到 `#root` |
+| `src/App.jsx` | 根元件，管理三個頁面（setup / stage / report）的切換狀態 |
+
+#### 核心邏輯
+
+| 檔案 | 說明 |
+|------|------|
+| `src/api.js` | Claude Code bridge 的核心。`callClaude()` 向 `/api/bridge/pending` 發出請求並輪詢 `/api/bridge/queue`，等 Claude Code 把對話推進來。`hasApiKey()` 固定回傳 `true`，跳過 Key 輸入流程 |
+| `src/constants.js` | 所有常數：預設場景文字、三個角色的預設值（名字／性格／目的／關係／秘密／語氣）、初始情緒值、導演快捷指令列表、主題色盤 |
+
+#### 頁面元件
+
+| 檔案 | 說明 |
+|------|------|
+| `src/components/Setup.jsx` | 設定頁。包含場景輸入框、三個角色卡（名字／性格／目的／關係／秘密／語氣），以及每個角色的怒／懼／信情緒滑桿 |
+| `src/components/Stage.jsx` | 舞台頁，核心體驗。管理對話訊息串、情緒儀表板、30 秒自動計時器、導演介入按鈕，以及排隊機制（busy 時按按鈕不丟失，下輪自動執行） |
+| `src/components/Report.jsx` | 情節建議書頁。呼叫 `callClaude()` 請 Claude Code 分析整場對話，輸出劇情摘要、角色弧線、最高張力點、三條後續岔路，並提供一鍵複製 |
+
+#### 設定檔
+
+| 檔案 | 說明 |
+|------|------|
+| `vite.config.js` | Vite 設定 + bridge plugin。Plugin 在開發伺服器上掛載三個端點（`/api/bridge/pending`、`/api/bridge/push`、`/api/bridge/queue`），透過本地檔案（`/tmp/novel-sandbox-pending.json`）在瀏覽器與 Claude Code 之間傳遞訊息 |
+| `package.json` | 專案依賴：`react`、`react-dom`、`vite`、`@vitejs/plugin-react` |
+| `.env.example` | API Key 範本（本版本不需要填入，保留供未來切換回直接呼叫 API 使用） |
+| `.claude/launch.json` | Claude Code preview server 設定，讓 Claude Code 知道如何用 `npm run dev` 啟動並預覽這個專案 |
+
+---
+
 ### Claude Code Bridge
 
 `vite.config.js` 內建一個輕量 bridge plugin，提供三個本地端點：
