@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "description": "多角色自主實境沙盒 — 小說家靈感培養皿",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
+    "codex-worker": "node scripts/codex-worker.js",
     "build": "vite build",
     "preview": "vite preview"
   },

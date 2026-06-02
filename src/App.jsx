@@ -28,8 +28,8 @@ export default function App() {
       <style>{globalCss}</style>
 
       {screen === 'setup' && (
-        <Setup onStart={(scene, chars, emotions) => {
-          setStageProps({ scene, chars, initEmotions: emotions })
+        <Setup onStart={(scene, chars, emotions, engine, world) => {
+          setStageProps({ scene, chars, initEmotions: emotions, engine, world })
           setScreen('stage')
         }} />
       )}
@@ -38,8 +38,8 @@ export default function App() {
         <Stage
           {...stageProps}
           onReset={() => setScreen('setup')}
-          onReport={(chars, emotions, history, scene) => {
-            setReportProps({ chars, emotions, history, scene })
+          onReport={(chars, emotions, history, scene, engine, world) => {
+            setReportProps({ chars, emotions, history, scene, engine, world })
             setScreen('report')
           }}
         />

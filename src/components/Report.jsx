@@ -1,33 +1,58 @@
 import { useState, useEffect } from 'react'
-import { CHAR_IDS, T } from '../constants.js'
+import { T } from '../constants.js'
 import { callClaude } from '../api.js'
 
-export default function Report({ chars, emotions, history, scene, onBack }) {
+function worldList(world, key) {
+  const value = world?.[key]
+  return Array.isArray(value) ? value.join('；') : value || ''
+}
+
+function buildWorldText(world) {
+  if (!world) return ''
+  return `世界觀：${world.premise || ''}
+類型：${world.genre || ''}
+地點：${world.location || ''}
+時代：${world.era || ''}
+氣氛：${world.atmosphere || ''}
+規則：${worldList(world, 'rules')}
+勢力：${worldList(world, 'factions')}
+核心衝突：${worldList(world, 'conflicts')}
+世界秘密：${worldList(world, 'secrets')}
+時間線：${worldList(world, 'timeline')}
+導演備註：${world.director_notes || ''}`
+}
+
+export default function Report({ chars, emotions, history, scene, engine = 'claude-code', world, onBack }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
 
   useEffect(() => {
+    const charIds = Object.keys(chars)
     const histText = history.slice(-8).map((h, i) => `輪${i + 1}:${h.a.slice(0, 200)}`).join(' | ')
-    const emSnap = CHAR_IDS.map(id => `${chars[id].name}怒${emotions[id].anger}懼${emotions[id].fear}信${emotions[id].trust}`).join(' ')
+    const emSnap = charIds.map(id => {
+      const e = emotions[id] || { anger: 0, fear: 0, trust: 0 }
+      return `${chars[id].name}怒${e.anger}懼${e.fear}信${e.trust}`
+    }).join(' ')
 
     const prompt = `你是資深編劇顧問。分析以下即興戲劇，只輸出JSON，不含任何其他文字：
 
 場景：${scene}
-${CHAR_IDS.map(id => `角色${id.toUpperCase()}(${chars[id].name})秘密：${chars[id].secret}`).join(' ')}
+${buildWorldText(world)}
+${charIds.map(id => `角色${id.toUpperCase()}(${chars[id].name})秘密：${chars[id].secret} 補充設定：${chars[id].notes || ''}`).join(' ')}
 對話記錄：${histText}
 最終情緒：${emSnap}
 
 輸出格式（只輸出JSON）：
-{"summary":"3~5句概括張力","arcs":[{"char":"名字","arc":"弧線一句話"},{"char":"名字","arc":"弧線"},{"char":"名字","arc":"弧線"}],"paths":[{"label":"路線一標題","desc":"30字內轉折"},{"label":"路線二標題","desc":"30字"},{"label":"路線三標題","desc":"30字"}],"tension":"最高張力點一句話"}`
+{"summary":"3~5句概括張力","prose":"將演繹轉成一段小說正文草稿","arcs":[{"char":"名字","arc":"弧線一句話"}],"usable_lines":["可直接放進小說的台詞"],"paths":[{"label":"路線一標題","desc":"30字內轉折"},{"label":"路線二標題","desc":"30字"},{"label":"路線三標題","desc":"30字"}],"tension":"最高張力點一句話"}`
 
-    callClaude([{ role: 'user', content: prompt }])
+    callClaude([{ role: 'user', content: prompt }], '', { engine })
       .then(({ parsed }) => setData(parsed))
       .catch(e => setErr(e.message))
   }, [])
 
   const copy = () => {
     if (!data) return
-    const t = `【情節推進建議書】\n\n▌摘要\n${data.summary}\n\n▌角色弧線\n${data.arcs?.map(a => `${a.char}：${a.arc}`).join('\n')}\n\n▌最高張力\n${data.tension}\n\n▌三條岔路\n${data.paths?.map(p => `${p.label}\n${p.desc}`).join('\n\n')}`
+    const t = `【情節推進建議書】\n\n▌摘要\n${data.summary}\n\n▌小說正文草稿\n${data.prose || ''}\n\n▌角色弧線\n${data.arcs?.map(a => `${a.char}：${a.arc}`).join('\n')}\n\n▌最高張力\n${data.tension}\n\n▌三條岔路\n${data.paths?.map(p => `${p.label}\n${p.desc}`).join('\n\n')}`
     navigator.clipboard.writeText(t).then(() => alert('已複製！'))
   }
 
@@ -65,6 +90,12 @@ ${CHAR_IDS.map(id => `角色${id.toUpperCase()}(${chars[id].name})秘密：${cha
               <p style={{ fontSize: 13, lineHeight: 1.85, color: T.text, fontFamily: 'Georgia, serif' }}>{data.summary}</p>
             </Sec>
 
+            {data.prose && (
+              <Sec title="小說正文草稿">
+                <p style={{ fontSize: 13, lineHeight: 1.9, color: T.text, fontFamily: 'Georgia, serif' }}>{data.prose}</p>
+              </Sec>
+            )}
+
             <Sec title="角色情緒弧線">
               {data.arcs?.map((a, i) => (
                 <div key={i} style={{ padding: '0.35rem 0', borderBottom: `1px solid ${T.border}`, fontSize: 12, color: T.text, lineHeight: 1.7, fontFamily: 'Georgia, serif' }}>
@@ -76,6 +107,14 @@ ${CHAR_IDS.map(id => `角色${id.toUpperCase()}(${chars[id].name})秘密：${cha
             <Sec title="當前最高張力">
               <p style={{ fontSize: 13, color: T.red, fontFamily: 'Georgia, serif', lineHeight: 1.8 }}>{data.tension}</p>
             </Sec>
+
+            {data.usable_lines?.length > 0 && (
+              <Sec title="可用台詞">
+                {data.usable_lines.map((line, i) => (
+                  <div key={i} style={{ padding: '0.3rem 0', fontSize: 12, color: T.text2, lineHeight: 1.7, fontFamily: 'Georgia, serif' }}>{line}</div>
+                ))}
+              </Sec>
+            )}
 
             <Sec title="三條情節岔路">
               {data.paths?.map((p, i) => (

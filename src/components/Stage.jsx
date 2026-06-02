@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { CHAR_IDS, CHAR_COLORS, DIRECTOR_CMDS, TIMER_MAX, T } from '../constants.js'
+import { CHAR_COLORS, DIRECTOR_CMDS, ENGINE_TIMER_MAX, TIMER_MAX, T } from '../constants.js'
 import { callClaude } from '../api.js'
 
 function EmBar({ label, v, color }) {
@@ -17,12 +17,13 @@ function EmBar({ label, v, color }) {
 function Message({ m }) {
   const isSystem = m.type === 'system'
   const isDir = m.type === 'director'
-  const col = m.id ? CHAR_COLORS[m.id] : isDir ? T.accent : T.text3
+  const isNarrator = m.type === 'narrator'
+  const col = m.id ? (CHAR_COLORS[m.id] || T.accent) : isDir ? T.accent : isNarrator ? T.amber : T.text3
   return (
     <div style={{ animation: 'fadeUp .35s ease forwards', opacity: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: col, letterSpacing: '0.04em' }}>
-          {isSystem ? '// SYSTEM' : isDir ? '[ 導演 ]' : m.name}
+          {isSystem ? '// SYSTEM' : isDir ? '[ 導演 ]' : isNarrator ? '[ 旁白 ]' : m.name}
         </span>
         {m.emotion && (
           <span style={{ fontSize: 9, color: T.text3, padding: '1px 5px', border: `1px solid ${T.border}`, borderRadius: 99 }}>
@@ -32,10 +33,10 @@ function Message({ m }) {
         {m.time && <span style={{ fontSize: 9, color: T.text3, marginLeft: 'auto' }}>{m.time}</span>}
       </div>
       <div style={{
-        fontSize: isSystem ? 11 : isDir ? 12 : 13.5,
+        fontSize: isSystem ? 11 : isDir || isNarrator ? 12 : 13.5,
         lineHeight: 1.75,
-        color: isSystem ? T.text3 : isDir ? T.accent : T.text,
-        fontStyle: isDir ? 'italic' : 'normal',
+        color: isSystem ? T.text3 : isDir ? T.accent : isNarrator ? T.text2 : T.text,
+        fontStyle: isDir || isNarrator ? 'italic' : 'normal',
         fontFamily: (!isSystem && !isDir) ? 'Georgia, serif' : 'inherit',
       }}>
         {isDir ? `→ ${m.text}` : m.text}
@@ -44,13 +45,36 @@ function Message({ m }) {
   )
 }
 
-export default function Stage({ scene, chars, initEmotions, onReset, onReport }) {
+function worldList(world, key) {
+  const value = world?.[key]
+  return Array.isArray(value) ? value.join('；') : value || ''
+}
+
+function buildWorldText(world) {
+  if (!world) return ''
+  return `世界觀：
+核心前提：${world.premise || ''}
+類型：${world.genre || ''}
+地點：${world.location || ''}
+時代：${world.era || ''}
+氣氛：${world.atmosphere || ''}
+規則：${worldList(world, 'rules')}
+勢力：${worldList(world, 'factions')}
+核心衝突：${worldList(world, 'conflicts')}
+世界秘密：${worldList(world, 'secrets')}
+時間線：${worldList(world, 'timeline')}
+導演備註：${world.director_notes || ''}`
+}
+
+export default function Stage({ scene, chars, initEmotions, engine = 'claude-code', world, onReset, onReport }) {
+  const timerMax = ENGINE_TIMER_MAX[engine] || TIMER_MAX
+  const charIds = Object.keys(chars)
   const [msgs, setMsgs] = useState([{ type: 'system', text: '演出開始，角色進入場景……' }])
   const [emotions, setEmotions] = useState(initEmotions)
   const [round, setRound] = useState(0)
   const [paused, setPaused] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [timer, setTimer] = useState(TIMER_MAX)
+  const [timer, setTimer] = useState(timerMax)
   const [debug, setDebug] = useState([])
   const [showDebug, setShowDebug] = useState(false)
   const [customCmd, setCustomCmd] = useState('')
@@ -72,20 +96,23 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
   const addMsg = useCallback((m) => { setMsgs(p => [...p, { ...m, time: now() }]); scroll() }, [])
 
   const buildSystem = useCallback(() => {
-    const e = emotionsRef.current
-    return `你是多角色戲劇沙盒引擎，讓三個角色在場景中自然對話衝突。
+    const characterText = charIds.map((id, index) => {
+      const c = chars[id]
+      const e = emotionsRef.current[id] || { anger: 3, fear: 3, trust: 4 }
+      return `角色${index + 1}/${id}(${c.name})：性格「${c.trait}」目的「${c.goal || ''}」關係「${c.relation || ''}」秘密「${c.secret}」語氣「${c.tone}」補充設定「${c.notes || ''}」；情緒怒${e.anger}懼${e.fear}信${e.trust}`
+    }).join('\n')
+
+    return `你是多角色戲劇沙盒引擎，讓角色在場景中自然對話衝突。
 
 場景：${scene}
-角色A(${chars.a.name})：性格「${chars.a.trait}」目的「${chars.a.goal||''}」關係「${chars.a.relation||''}」秘密「${chars.a.secret}」語氣「${chars.a.tone}」
-角色B(${chars.b.name})：性格「${chars.b.trait}」目的「${chars.b.goal||''}」關係「${chars.b.relation||''}」秘密「${chars.b.secret}」語氣「${chars.b.tone}」
-角色C(${chars.c.name})：性格「${chars.c.trait}」目的「${chars.c.goal||''}」關係「${chars.c.relation||''}」秘密「${chars.c.secret}」語氣「${chars.c.tone}」
-當前情緒(0-10)：${chars.a.name}怒${e.a.anger}懼${e.a.fear}信${e.a.trust} ${chars.b.name}怒${e.b.anger}懼${e.b.fear}信${e.b.trust} ${chars.c.name}怒${e.c.anger}懼${e.c.fear}信${e.c.trust}
+${buildWorldText(world)}
+${characterText}
 
 嚴格只輸出以下JSON，不含任何其他文字：
-{"lines":[{"char":"a","line":"台詞","emotion":"情緒標籤"},{"char":"b","line":"台詞","emotion":"情緒標籤"},{"char":"c","line":"台詞","emotion":"情緒標籤"}],"emotions":{"a":{"anger":0,"fear":0,"trust":0},"b":{"anger":0,"fear":0,"trust":0},"c":{"anger":0,"fear":0,"trust":0}}}
+{"narration":"旁白敘事，可空字串","lines":[{"char":"${charIds[0] || 'a'}","line":"台詞","emotion":"情緒標籤"}],"decisions":[{"char":"角色名","intent":"本輪行動意圖","because":"依據設定或事件的可讀理由"}],"director_effect":"導演指令如何影響本輪，可空字串","emotions":{${charIds.map(id => `"${id}":{"anger":0,"fear":0,"trust":0}`).join(',')}}}
 
-規則：台詞符合性格語氣、有衝突張力、1~3句、秘密不輕易揭露、情緒值±1~2。只輸出JSON。`
-  }, [scene, chars])
+規則：每輪可讓1到${Math.min(3, charIds.length)}名最適合的角色發言；台詞符合性格語氣、有衝突張力、1~3句、秘密不輕易揭露、情緒值±1~2。只輸出JSON。`
+  }, [scene, chars, charIds, world])
 
   const doRound = useCallback(async (intervention) => {
     if (busyRef.current) {
@@ -116,13 +143,17 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
     messages.push({ role: 'user', content: userMsg })
 
     try {
-      const { parsed, raw } = await callClaude(messages, buildSystem())
+      const { parsed, raw } = await callClaude(messages, buildSystem(), { engine })
       log(`OK: ${raw.slice(0, 80)}`)
 
       hist.push({ q: userMsg, a: raw })
       if (hist.length > 8) histRef.current = hist.slice(-8)
 
-      setRound(r => r + 1)
+    setRound(r => r + 1)
+
+      if (parsed.narration) {
+        addMsg({ type: 'narrator', text: parsed.narration })
+      }
 
       if (Array.isArray(parsed.lines)) {
         parsed.lines.forEach(l => {
@@ -135,8 +166,8 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
 
       if (parsed.emotions) {
         const next = {}
-        CHAR_IDS.forEach(id => {
-          if (!parsed.emotions[id]) { next[id] = emotionsRef.current[id]; return }
+      charIds.forEach(id => {
+        if (!parsed.emotions[id]) { next[id] = emotionsRef.current[id]; return }
           next[id] = {
             anger: Math.max(0, Math.min(10, Number(parsed.emotions[id].anger) || 0)),
             fear: Math.max(0, Math.min(10, Number(parsed.emotions[id].fear) || 0)),
@@ -152,8 +183,8 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
 
     setBusy(false)
     busyRef.current = false
-    setTimer(TIMER_MAX)
-  }, [buildSystem, chars, addMsg, round])
+    setTimer(timerMax)
+  }, [buildSystem, chars, addMsg, round, engine, timerMax, charIds])
 
   useEffect(() => { doRound(null) }, [])
 
@@ -161,7 +192,7 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
     const iv = setInterval(() => {
       if (pausedRef.current || busyRef.current) return
       setTimer(t => {
-        if (t <= 1) { doRound(null); return TIMER_MAX }
+        if (t <= 1) { doRound(null); return timerMax }
         return t - 1
       })
     }, 1000)
@@ -170,7 +201,7 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
 
   const intervene = (cmd) => {
     addMsg({ type: 'director', text: cmd })
-    setTimer(TIMER_MAX)
+    setTimer(timerMax)
     doRound(cmd)
   }
 
@@ -188,6 +219,7 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
           <div style={{ width: 7, height: 7, background: T.red, borderRadius: '50%', animation: 'blink 1.2s ease-in-out infinite' }} />
           <span style={{ fontSize: 10, color: T.text2, letterSpacing: '0.1em' }}>LIVE</span>
           <span style={{ fontSize: 10, color: T.text3, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{scene}</span>
+          <span style={{ fontSize: 9, color: T.accent, border: `1px solid ${T.border}`, borderRadius: 99, padding: '1px 6px' }}>{engine}</span>
         </div>
         <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
           <button onClick={() => setShowDebug(p => !p)} style={{ fontSize: 9, padding: '0.25rem 0.5rem', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, color: T.text3, cursor: 'pointer' }}>
@@ -197,7 +229,7 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
           <button onClick={() => setPaused(p => !p)} style={{ fontSize: 10, padding: '0.3rem 0.6rem', background: 'transparent', border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text2, cursor: 'pointer' }}>
             {paused ? '繼續' : '暫停'}
           </button>
-          <button onClick={() => onReport(chars, emotions, histRef.current, scene)}
+          <button onClick={() => onReport(chars, emotions, histRef.current, scene, engine, world)}
             style={{ fontSize: 10, padding: '0.3rem 0.7rem', background: T.accent, border: `1px solid ${T.accent}`, borderRadius: 4, color: '#0a0a0f', fontWeight: 700, cursor: 'pointer' }}>
             生成建議書
           </button>
@@ -235,7 +267,7 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
               <div style={{ fontFamily: 'monospace', fontSize: '1.8rem', color: T.accent, lineHeight: 1 }}>{String(timer).padStart(2, '0')}</div>
               <div style={{ fontSize: 9, color: T.text3, marginTop: 2 }}>{busy ? '生成中…' : paused ? '已暫停' : '秒後自動推進'}</div>
               <div style={{ height: 2, background: 'rgba(255,255,255,.08)', borderRadius: 1, marginTop: 6, overflow: 'hidden' }}>
-                <div style={{ width: `${(timer / TIMER_MAX) * 100}%`, height: '100%', background: T.accent, transition: 'width 1s linear' }} />
+                <div style={{ width: `${(timer / timerMax) * 100}%`, height: '100%', background: T.accent, transition: 'width 1s linear' }} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.text3, marginTop: 4 }}>
@@ -247,9 +279,9 @@ export default function Stage({ scene, chars, initEmotions, onReset, onReport })
           {/* emotions */}
           <div>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: T.text3, textTransform: 'uppercase', marginBottom: 8, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>情緒儀表板</div>
-            {CHAR_IDS.map(id => (
+            {charIds.map(id => (
               <div key={id} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: 'rgba(255,255,255,.05) 1px solid' }}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: CHAR_COLORS[id], marginBottom: 4 }}>{chars[id].name}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: CHAR_COLORS[id] || T.accent, marginBottom: 4 }}>{chars[id].name}</div>
                 <EmBar label="怒" v={emotions[id].anger} color={T.red} />
                 <EmBar label="懼" v={emotions[id].fear}  color={T.amber} />
                 <EmBar label="信" v={emotions[id].trust} color={T.teal} />
