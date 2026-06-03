@@ -381,6 +381,7 @@ function bridgePlugin() {
 
 export default defineConfig({
   plugins: [react(), bridgePlugin()],
+  base: '/novel-sandbox/',
   server: {
     port: 3000,
   },
