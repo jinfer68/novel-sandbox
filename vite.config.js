@@ -305,7 +305,16 @@ function bridgePlugin() {
           let body = ''
           req.on('data', d => body += d)
           req.on('end', () => {
-            fs.writeFileSync(PENDING_FILE, body)
+            const parsed = safeJsonParse(body, null)
+            // empty body = new game start → clear stale queue and pending
+            if (!parsed || !parsed.id) {
+              fs.writeFileSync(PENDING_FILE, '{}')
+              fs.writeFileSync(QUEUE_FILE, '{}')
+            } else {
+              fs.writeFileSync(PENDING_FILE, body)
+              // append to a separate notify log so external watchers can tail -f
+              fs.appendFileSync('/tmp/novel-sandbox-notify.log', parsed.id + '\n')
+            }
             res.end('ok')
           })
         } else {

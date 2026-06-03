@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { CHAR_COLORS, DIRECTOR_CMDS, ENGINE_TIMER_MAX, TIMER_MAX, T } from '../constants.js'
+import { CHAR_COLORS, pickDirectorCmds, ENGINE_TIMER_MAX, TIMER_MAX, T } from '../constants.js'
 import { callClaude } from '../api.js'
 
 function EmBar({ label, v, color }) {
@@ -78,6 +78,7 @@ export default function Stage({ scene, chars, initEmotions, engine = 'claude-cod
   const [debug, setDebug] = useState([])
   const [showDebug, setShowDebug] = useState(false)
   const [customCmd, setCustomCmd] = useState('')
+  const [dirCmds, setDirCmds] = useState(() => pickDirectorCmds(4))
 
   const histRef = useRef([])
   const emotionsRef = useRef(initEmotions)
@@ -291,9 +292,19 @@ ${characterText}
 
           {/* director commands */}
           <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: T.text3, textTransform: 'uppercase', marginBottom: 8, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>導演介入</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontSize: 9, letterSpacing: '0.2em', color: T.text3, textTransform: 'uppercase' }}>導演介入</span>
+              <button
+                onClick={() => setDirCmds(pickDirectorCmds(4, dirCmds))}
+                title="換一批"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.text3, fontSize: 11, lineHeight: 1, padding: '0 2px', transition: 'color .15s' }}
+                onMouseEnter={e => { e.currentTarget.style.color = T.accent }}
+                onMouseLeave={e => { e.currentTarget.style.color = T.text3 }}>
+                ↻
+              </button>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
-              {DIRECTOR_CMDS.map((cmd, i) => {
+              {dirCmds.map((cmd, i) => {
                 const short = cmd.replace(/，.*/, '')
                 return (
                   <button key={i} onClick={() => intervene(cmd)}

@@ -21,6 +21,7 @@ const globalCss = `
 export default function App() {
   const [screen, setScreen] = useState('setup')
   const [stageProps, setStageProps] = useState(null)
+  const [stageKey, setStageKey] = useState(0)
   const [reportProps, setReportProps] = useState(null)
 
   return (
@@ -30,12 +31,15 @@ export default function App() {
       {screen === 'setup' && (
         <Setup onStart={(scene, chars, emotions, engine, world) => {
           setStageProps({ scene, chars, initEmotions: emotions, engine, world })
+          setStageKey(k => k + 1)
+          fetch('/api/bridge/pending', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }).catch(() => {})
           setScreen('stage')
         }} />
       )}
 
       {screen === 'stage' && stageProps && (
         <Stage
+          key={stageKey}
           {...stageProps}
           onReset={() => setScreen('setup')}
           onReport={(chars, emotions, history, scene, engine, world) => {
