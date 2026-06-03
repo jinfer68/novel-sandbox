@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -v http://localhost:3000/)",
+      "Bash(pkill -f \"vite --port 3000\")",
+      "Bash(npm run *)",
+      "Bash(node -e \"console.log\\(process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.slice\\(0,15\\)+'...' : 'empty'\\)\")",
+      "Bash(pkill -f \"vite\")",
+      "Bash(curl -s http://localhost:3000/api/bridge/queue)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -v http://localhost:3000/api/bridge/queue)",
+      "Bash(curl -s -X POST http://localhost:3000/api/bridge/push -H 'Content-Type: application/json' -d '{\"lines\":[{\"char\":\"a\",\"line\":\"兇器不見了。林先生，你最後一個離開書房——是嗎？\",\"emotion\":\"冷靜懷疑\"},{\"char\":\"b\",\"line\":\"偵探先生，昨晚十點我在廚房備料，廚具記錄可以佐證。\",\"emotion\":\"過度禮貌\"},{\"char\":\"c\",\"line\":\"你們幹嘛一直看我？！我真的不知道叔叔怎麼死的！\",\"emotion\":\"恐慌失控\"}],\"emotions\":{\"a\":{\"anger\":4,\"fear\":2,\"trust\":3},\"b\":{\"anger\":2,\"fear\":8,\"trust\":5},\"c\":{\"anger\":7,\"fear\":9,\"trust\":1}}}')",
+      "Bash(pkill -f \"vite\" 2>/dev/null; sleep 1 *)",
+      "Bash(gh auth *)",
+      "Bash(git --version)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
