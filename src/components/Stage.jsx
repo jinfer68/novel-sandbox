@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { CHAR_COLORS, pickDirectorCmds, ENGINE_TIMER_MAX, TIMER_MAX, T } from '../constants.js'
-import { callClaude } from '../api.js'
+import { callClaude, resetLocalEngine } from '../api.js'
 
 function EmBar({ label, v, color }) {
   return (
@@ -187,7 +187,10 @@ ${characterText}
     setTimer(timerMax)
   }, [buildSystem, chars, addMsg, round, engine, timerMax, charIds])
 
-  useEffect(() => { doRound(null) }, [])
+  useEffect(() => {
+    if (engine === 'local') resetLocalEngine()
+    doRound(null)
+  }, [])
 
   useEffect(() => {
     const iv = setInterval(() => {
