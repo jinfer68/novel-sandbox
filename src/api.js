@@ -1,25 +1,18 @@
 /**
- * Local engine — scripted branching murder mystery.
+ * Local engine — linear scripted murder mystery with built-in director events.
  *
- * Director interventions set story flags that alter subsequent beats
- * and lead to one of three distinct endings:
- *   - "evidence"       物證路線（發現遺書 / 別針）
- *   - "breakdown"      崩潰路線（情緒崩潰 / 肢體衝突）
- *   - "escape_attempt" 逃脫路線（停電 / 腳步聲）
- *   - "default"        無介入的標準結局
+ * The story progresses through 8 beats in fixed order.
+ * Certain beats include a pre-scripted director intervention
+ * (停電、遺書、崩潰、警笛) baked directly into the narrative —
+ * no user input needed, but user interventions still override.
  */
 
 // ─── Session state ────────────────────────────────────────────────────────────
 
-let _round = 0          // main story beat index
-let _flags = new Set()  // triggered story flags
-let _ending = null      // locked-in ending path (null until triggered)
+let _round = 0
 
-// Reset is called when Stage remounts (new game)
 export function resetLocalEngine() {
   _round = 0
-  _flags = new Set()
-  _ending = null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -40,9 +33,14 @@ function extractEmotions(sp) {
 function clamp(v) { return Math.max(0, Math.min(10, v)) }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
 
-// ─── Main story beats (shared opening) ───────────────────────────────────────
+// ─── Linear story beats (8 rounds) ───────────────────────────────────────────
+//
+// director_event: shown in the director_effect field and logged as [ 導演 ]
+// beats with director_event are pre-scripted interventions built into the story.
 
-const OPENING_BEATS = [
+const STORY = [
+
+  // ── Round 0 · 開場：初次對峙 ──────────────────────────────────────────────
   {
     narration: '三人站在書房的不同角落。壁爐的火已滅，只剩灰燼。死者的血跡在地毯上乾成深褐色，沒有人敢靠近那個位置。',
     lines: [
@@ -55,8 +53,11 @@ const OPENING_BEATS = [
       { char: '管家林威廉', intent: '搶先表現配合，建立無辜形象', because: '控制現場對他有利' },
       { char: '繼承人蘇艾倫', intent: '情緒失控，暴露不安', because: '秘密讓她無法冷靜' },
     ],
+    director_event: null,
     emotions: { a: { anger: 3, fear: 1, trust: 3 }, b: { anger: 1, fear: 6, trust: 5 }, c: { anger: 5, fear: 8, trust: 2 } },
   },
+
+  // ── Round 1 · 時間線矛盾 ──────────────────────────────────────────────────
   {
     narration: '陳修遠在房間裡慢慢踱步，目光掃過每個人的手。林威廉始終保持著精準的距離——不遠不近，像站在一個預先計算好的位置。',
     lines: [
@@ -69,296 +70,206 @@ const OPENING_BEATS = [
       { char: '管家林威廉', intent: '用不可查驗的證人反駁', because: '必須維持不在場證明' },
       { char: '繼承人蘇艾倫', intent: '帳本讓她聯想到改遺囑的事', because: '心虛讓她對某些詞特別敏感' },
     ],
+    director_event: null,
     emotions: { a: { anger: 3, fear: 1, trust: 3 }, b: { anger: 2, fear: 7, trust: 4 }, c: { anger: 5, fear: 9, trust: 1 } },
   },
+
+  // ── Round 2 · 【導演介入：突然停電】──────────────────────────────────────
   {
-    narration: '蘇艾倫的手一直在顫抖。她試圖靠近窗邊，像是想確認外面是否還有逃路。窗外是大雪，什麼都沒有。',
+    narration: '燈光在一聲悶響後全部熄滅。黑暗像布幕一樣落下，三個人誰都沒有動——或者說，幾乎沒有。腳步聲在黑暗中朝著門口移動。',
     lines: [
-      { char: 'a', line: '蘇小姐，遺囑的事——你知道我指的是什麼。', emotion: '銳利' },
-      { char: 'c', line: '我不知道你在說什麼！那份遺囑是叔叔自己的意思！', emotion: '崩潰邊緣' },
-      { char: 'b', line: '（輕咳）也許蘇小姐需要一杯熱茶。偵探先生，何必逼得這麼緊？', emotion: '假意維護' },
+      { char: 'a', line: '（沉聲）誰都不准移動。', emotion: '警覺' },
+      { char: 'b', line: '保險絲應該在地下室……我去——', emotion: '試圖離開' },
+      { char: 'c', line: '不要讓他走！保險絲箱在地下室，不在走廊！我在這裡住了二十年，我知道！', emotion: '尖叫' },
     ],
     decisions: [
-      { char: '偵探陳修遠', intent: '直接點破遺囑議題，觀察她的崩潰程度', because: '她的反應已說明一切' },
-      { char: '繼承人蘇艾倫', intent: '下意識否認，反應過激反而露出破綻', because: '被點名讓她失去控制' },
-      { char: '管家林威廉', intent: '護著蘇艾倫，讓她欠人情，顯示自己善良', because: '讓兩人互相牽制對他有利' },
-    ],
-    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 2, fear: 7, trust: 4 }, c: { anger: 7, fear: 10, trust: 1 } },
-  },
-]
-
-// ─── Branching mid-section (affected by flags) ───────────────────────────────
-
-const MID_BEATS = {
-  default: {
-    narration: '氣溫繼續下降。林威廉不再像最初那樣筆直站立，他的手悄悄握住了椅背。這是今晚第一次，他的姿態出現了破綻。',
-    lines: [
-      { char: 'a', line: '林先生服侍老爺三十年。三十年，一個人可以累積很多恨意。', emotion: '緩慢，每字清晰' },
-      { char: 'b', line: '（停頓三秒）我不知道偵探先生這話是什麼意思。', emotion: '第一次失去從容' },
-      { char: 'c', line: '他的手在抖。我看到了，他的手在抖。', emotion: '幾乎在自言自語' },
-    ],
-    decisions: [
-      { char: '偵探陳修遠', intent: '攻擊動機而非不在場，讓林威廉心理防線鬆動', because: '不在場可以偽造，但恨意無法假裝不存在' },
-      { char: '管家林威廉', intent: '第一次真正動搖', because: '被點中要害讓他短暫失去計算能力' },
-      { char: '繼承人蘇艾倫', intent: '開始懷疑林威廉', because: '恐懼從「被懷疑」轉向「我旁邊站著兇手」' },
-    ],
-    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 4, fear: 8, trust: 3 }, c: { anger: 6, fear: 9, trust: 1 } },
-  },
-  evidence: {
-    narration: '陳修遠把那個信封放在桌上，沒有說話。林威廉的眼睛在信封上停了兩秒，然後強迫移開。這個動作讓所有人都看見了。',
-    lines: [
-      { char: 'a', line: '這封信你見過。而且你見過不只一次。', emotion: '確定，不是疑問' },
-      { char: 'b', line: '（非常長的沉默）……我不知道你在說什麼。', emotion: '防線已開始鬆動' },
-      { char: 'c', line: '（往後退）他的眼睛動了。你們都看到了嗎？他的眼睛動了。', emotion: '緊盯著林威廉' },
-    ],
-    decisions: [
-      { char: '偵探陳修遠', intent: '用遺書逼迫林威廉承認知情', because: '物證比語言更有力' },
-      { char: '管家林威廉', intent: '第一次出現明顯遲疑', because: '信封的存在是他沒預料到的' },
-      { char: '繼承人蘇艾倫', intent: '開始主動觀察林威廉的反應', because: '她意識到嫌疑不在自己身上' },
-    ],
-    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 4, fear: 9, trust: 2 }, c: { anger: 5, fear: 8, trust: 3 } },
-  },
-  breakdown: {
-    narration: '蘇艾倫坐在地上，不知道什麼時候坐下去的。她的手捂著臉，肩膀在抖。林威廉往旁邊移了半步——像是要離她遠一點。',
-    lines: [
-      { char: 'c', line: '（從地上開口）我改了遺囑。我知道。但我沒有殺他。是有人在我之後，做了我沒做的事。', emotion: '精疲力竭的清醒' },
-      { char: 'a', line: '我知道不是你。（轉向林威廉）所以只剩一個問題了。', emotion: '平靜' },
-      { char: 'b', line: '（後退一步，碰到牆）……你們不能這樣對我。', emotion: '第一次顯露恐慌' },
-    ],
-    decisions: [
-      { char: '繼承人蘇艾倫', intent: '坦承一切，把調查方向推向林威廉', because: '與其被動被揭穿，不如主動交代' },
-      { char: '偵探陳修遠', intent: '接住蘇艾倫的坦白，立刻把壓力轉向林威廉', because: '時機剛好' },
-      { char: '管家林威廉', intent: '防線從側翼被突破，開始真正恐慌', because: '他沒料到蘇艾倫會主動坦白' },
-    ],
-    emotions: { a: { anger: 4, fear: 1, trust: 4 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 3, fear: 7, trust: 4 } },
-  },
-  escape_attempt: {
-    narration: '黑暗中，有腳步聲朝著門口移動。陳修遠在停電前就數好了每個人的位置，他靠著直覺攔在門口。燈光亮起時，林威廉就站在他面前。',
-    lines: [
-      { char: 'a', line: '（沉聲）你要去哪裡？', emotion: '堵在門口，不動' },
-      { char: 'b', line: '我……保險絲箱在走廊，我是去——', emotion: '解釋，但沒有後續' },
-      { char: 'c', line: '（顫聲）保險絲箱在地下室。不在走廊。我知道，我在這裡住了二十年。', emotion: '說出關鍵的一句話' },
-    ],
-    decisions: [
-      { char: '偵探陳修遠', intent: '利用黑暗預判林威廉的行動', because: '有意圖逃跑的人才會在停電時往門口走' },
+      { char: '偵探陳修遠', intent: '利用黑暗預判行動，堵在門口', because: '有意圖逃跑的人才會在停電時往門口走' },
       { char: '管家林威廉', intent: '試圖趁停電離開，謊言被拆穿', because: '慌亂讓他說出地點錯誤的藉口' },
-      { char: '繼承人蘇艾倫', intent: '無意中提供了最關鍵的反駁', because: '她對房子的熟悉程度超過林威廉的預期' },
+      { char: '繼承人蘇艾倫', intent: '無意中提供最關鍵的反駁', because: '她對房子的熟悉程度超過林威廉的預期' },
     ],
-    emotions: { a: { anger: 5, fear: 2, trust: 3 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 6, fear: 8, trust: 3 } },
+    director_event: '突然停電',
+    emotions: { a: { anger: 5, fear: 2, trust: 2 }, b: { anger: 4, fear: 9, trust: 2 }, c: { anger: 6, fear: 9, trust: 3 } },
   },
-}
 
-// ─── Endings ──────────────────────────────────────────────────────────────────
-
-const CLIMAX = {
-  default: {
-    narration: '陳修遠從口袋裡取出一枚領帶別針，放在桌上——金色，上面刻著字。林威廉的臉在那一刻失去了所有顏色。',
+  // ── Round 3 · 停電後的餘震 ────────────────────────────────────────────────
+  {
+    narration: '燈光恢復了。林威廉還站在門口，陳修遠就站在他面前。蘇艾倫意識到自己說了什麼，捂住嘴，但話已經說出去了。',
     lines: [
-      { char: 'a', line: '這枚別針在死者手裡找到的。林先生，這是您的吧？', emotion: '平靜，像刀刃' },
-      { char: 'b', line: '這……這不可能。我的別針一直……（沉默）', emotion: '崩潰' },
-      { char: 'c', line: '天啊。（退後一步）天啊，原來是你。', emotion: '恐懼與恍悟' },
+      { char: 'a', line: '（平靜）你要去哪裡？', emotion: '堵在門口，不動' },
+      { char: 'b', line: '我……我只是想去確認……', emotion: '第一次真正失去從容' },
+      { char: 'c', line: '（顫聲）他說謊了。他連保險絲箱在哪裡都說錯了。他在這裡住了三十年。', emotion: '驚恐中有一種清醒' },
     ],
     decisions: [
-      { char: '偵探陳修遠', intent: '亮出物證，一舉擊潰防線', because: '時機成熟' },
-      { char: '管家林威廉', intent: '防線徹底崩潰', because: '物證是無法用語言消解的' },
-      { char: '繼承人蘇艾倫', intent: '意識到自己一直和兇手站在同一個房間', because: '比被懷疑更可怕' },
+      { char: '偵探陳修遠', intent: '不追問，讓沉默說話', because: '林威廉站在門口本身就是答案' },
+      { char: '管家林威廉', intent: '解釋已無意義，開始真正崩潰', because: '被最不在意的人用最簡單的話拆穿' },
+      { char: '繼承人蘇艾倫', intent: '從旁觀者變成關鍵證人', because: '她說的那句話改變了這個夜晚的走向' },
     ],
-    emotions: { a: { anger: 5, fear: 1, trust: 3 }, b: { anger: 6, fear: 10, trust: 1 }, c: { anger: 5, fear: 10, trust: 2 } },
+    director_event: null,
+    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 5, fear: 8, trust: 3 } },
   },
-  evidence: {
-    narration: '信封攤開在桌上。裡面的字跡清晰，死者用顫抖的手寫下了一個名字，然後在名字下面畫了一條線。林威廉看著那個名字，長時間沒有說話。',
+
+  // ── Round 4 · 【導演介入：有人發現密室中的遺書】────────────────────────
+  {
+    narration: '蘇艾倫退到書架旁，手碰到一個信封——夾在最高層的縫隙裡，上面用老式鋼筆寫著：「若我死於非命，請交給——」後面的字被撕掉了。',
     lines: [
-      { char: 'a', line: '（把信紙推向林威廉）這是你的名字。他知道是你。他留下來了。', emotion: '冷靜' },
-      { char: 'b', line: '（極輕）他……他怎麼知道。（更輕）他一直都知道。', emotion: '不是在問，是在說給自己聽' },
-      { char: 'c', line: '（捂住嘴）叔叔……他一個人扛著這件事到最後。', emotion: '眼眶泛紅' },
+      { char: 'c', line: '（聲音在顫）這……這是叔叔的字跡。他知道會發生這件事。他早就知道。', emotion: '震驚' },
+      { char: 'a', line: '（接過信封，看了很久）信封被拆開過。而且不是今天拆的。', emotion: '沉著' },
+      { char: 'b', line: '（非常輕聲，幾乎對自己說）那封信……不應該還在。', emotion: '失控的一瞬間' },
+    ],
+    decisions: [
+      { char: '繼承人蘇艾倫', intent: '無意發現，成為另一個關鍵的人', because: '她退開是因為恐懼，卻因此找到了證據' },
+      { char: '偵探陳修遠', intent: '讓信封的細節說話，不急著逼問', because: '林威廉已經說出了最重要的話' },
+      { char: '管家林威廉', intent: '說出「不應該還在」——徹底暴露知情', because: '震驚讓他失去了語言過濾' },
+    ],
+    director_event: '有人發現密室中的遺書',
+    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 6, fear: 9, trust: 3 } },
+  },
+
+  // ── Round 5 · 遺書的重量 ──────────────────────────────────────────────────
+  {
+    narration: '信紙攤開在桌上。死者用顫抖的手寫下了一個名字，然後在名字下面畫了一條線——像是最後的確認，也像是原諒。林威廉看著那個名字，長時間沒有說話。',
+    lines: [
+      { char: 'a', line: '（把信紙推向林威廉）這是你的名字。他知道是你。他選擇留下來等你。', emotion: '平靜的重量' },
+      { char: 'b', line: '（極輕）他……他怎麼知道。（更輕）他一直都知道。', emotion: '不是在問，是說給自己聽' },
+      { char: 'c', line: '（哽咽）叔叔一個人在書房寫這封信……他知道那天晚上會發生什麼。', emotion: '哀傷蓋過恐懼' },
     ],
     decisions: [
       { char: '偵探陳修遠', intent: '讓遺書說話，自己退到後面', because: '有時候沉默比逼問更有力量' },
-      { char: '管家林威廉', intent: '三十年的對抗在這一刻有了答案——死者早就知道了', because: '這個事實比被逮捕更讓他崩潰' },
-      { char: '繼承人蘇艾倫', intent: '哀傷蓋過了恐懼', because: '她終於想起了叔叔這個人，而不只是遺產' },
+      { char: '管家林威廉', intent: '三十年的對抗在這一刻有了答案——死者早就知道了', because: '這比被逮捕更讓他崩潰' },
+      { char: '繼承人蘇艾倫', intent: '第一次想到叔叔這個人，而不只是那份遺產', because: '哀傷是真實的' },
     ],
-    emotions: { a: { anger: 3, fear: 2, trust: 4 }, b: { anger: 3, fear: 9, trust: 2 }, c: { anger: 2, fear: 6, trust: 5 } },
+    director_event: null,
+    emotions: { a: { anger: 3, fear: 1, trust: 4 }, b: { anger: 4, fear: 10, trust: 1 }, c: { anger: 3, fear: 7, trust: 4 } },
   },
-  breakdown: {
-    narration: '林威廉靠著牆坐了下去。沒有戲劇性，沒有掙扎，像一個終於可以卸下重量的人。蘇艾倫還在哭，但聲音已經小了很多。',
+
+  // ── Round 6 · 【導演介入：警笛聲從遠處傳來】──────────────────────────
+  {
+    narration: '遠處傳來斷斷續續的警笛聲，在雪夜裡格外清晰。時間忽然變得很具體——它正在倒數。',
     lines: [
-      { char: 'b', line: '（坐在地上，聲音很平）他說他要把我趕走。三十年。三十年後，他說要把我趕走。', emotion: '空洞的平靜' },
-      { char: 'a', line: '我知道。（蹲下來，和他同樣高度）但這不是你殺他的理由。', emotion: '不是在指責，更像是陳述' },
-      { char: 'c', line: '（抬頭，看著林威廉）……你應該早點說的。', emotion: '說不清是憤怒還是憐憫' },
+      { char: 'b', line: '（第一次表現出真正的慌亂）警察……這麼快。', emotion: '慌亂' },
+      { char: 'a', line: '大約還有十分鐘。十分鐘後你們說的每一句話都會變成正式紀錄。', emotion: '壓迫' },
+      { char: 'c', line: '（看向林威廉，然後看向陳修遠）我要說實話了。全部的實話。', emotion: '抉擇' },
     ],
     decisions: [
-      { char: '管家林威廉', intent: '說出一直沒說的動機——不是恨，是被拋棄', because: '崩潰之後反而什麼都說得出口' },
-      { char: '偵探陳修遠', intent: '第一次放下偵探的距離，以人的方式靠近他', because: '案子結束了，但他還是個人' },
-      { char: '繼承人蘇艾倫', intent: '在憤怒和同情之間搖擺', because: '她也有不能說的秘密，所以她懂得一點' },
+      { char: '管家林威廉', intent: '外部壓力讓所有算計加速瓦解', because: '時間是他最後的敵人' },
+      { char: '偵探陳修遠', intent: '用剩餘時間製造最後的壓力', because: '警察到來前是最後的機會' },
+      { char: '繼承人蘇艾倫', intent: '決定主動坦承——與其被動被揭穿，不如先說', because: '求生欲讓她做出最理性的選擇' },
     ],
-    emotions: { a: { anger: 2, fear: 2, trust: 5 }, b: { anger: 2, fear: 7, trust: 3 }, c: { anger: 4, fear: 5, trust: 4 } },
+    director_event: '警笛聲從遠處傳來',
+    emotions: { a: { anger: 4, fear: 1, trust: 4 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 4, fear: 7, trust: 4 } },
   },
-  escape_attempt: {
-    narration: '林威廉被堵在門口。他沒有再說話，只是看著陳修遠的眼睛，像是終於承認了一件事——他輸了，而且早就知道會輸。',
+
+  // ── Round 7 · 尾聲：真相落地 ──────────────────────────────────────────────
+  {
+    narration: '蘇艾倫說完之後，房間裡很安靜。林威廉靠著牆坐了下去，不是被推倒，是自己選擇坐下的。外面的警笛越來越近。',
     lines: [
-      { char: 'b', line: '（轉身，背對著門）……你是怎麼知道的。', emotion: '問的不是逃跑的事' },
-      { char: 'a', line: '（停頓）你服侍他三十年。你比任何人都更了解他。也比任何人都更了解那棟房子每一條走廊。', emotion: '回答了一個不同的問題' },
-      { char: 'c', line: '（靠著牆，不動）……我以後一個人住在這裡嗎。', emotion: '突然意識到一件事' },
+      { char: 'c', line: '我改了遺囑。叔叔發現了。但我沒有殺他。殺他的人就在這個房間裡，你們都知道是誰。', emotion: '精疲力竭的清醒' },
+      { char: 'b', line: '（坐在地上，聲音很平）他說他要把我趕走。三十年後，他說要把我趕走。', emotion: '空洞' },
+      { char: 'a', line: '我知道。（蹲下來，和他同樣高度）但這不是你殺他的理由。', emotion: '不是在指責，是陳述' },
     ],
     decisions: [
-      { char: '管家林威廉', intent: '承認失敗，但問的是動機如何被看穿', because: '他想知道哪裡出了錯' },
-      { char: '偵探陳修遠', intent: '回答了林威廉沒問出口的問題', because: '有時候真正想知道的是另一件事' },
-      { char: '繼承人蘇艾倫', intent: '突然意識到自己繼承的不只是遺產，還有這個空蕩蕩的莊園', because: '結局降臨時，她想到的是以後' },
+      { char: '繼承人蘇艾倫', intent: '說完一切，把真相交出去', because: '她已經沒有力氣繼續隱瞞' },
+      { char: '管家林威廉', intent: '說出三十年壓抑的動機——不是恨，是被拋棄', because: '防線崩潰後反而能說出真心話' },
+      { char: '偵探陳修遠', intent: '放下偵探的距離，以人的方式靠近', because: '案子結束了，他終於可以只是一個人' },
     ],
-    emotions: { a: { anger: 3, fear: 2, trust: 4 }, b: { anger: 3, fear: 8, trust: 3 }, c: { anger: 3, fear: 6, trust: 4 } },
+    director_event: null,
+    emotions: { a: { anger: 2, fear: 2, trust: 5 }, b: { anger: 2, fear: 7, trust: 3 }, c: { anger: 2, fear: 5, trust: 5 } },
   },
-}
+]
 
-const EPILOGUE = {
-  narration: '遠處終於傳來車聲——警察到了。三個人都沒有移動，像是這個消息已經不再重要。壁爐的灰燼裡有火星短暫閃了一下，然後熄滅。',
-  lines: [
-    { char: 'b', line: '（極輕聲）我服侍他三十年。三十年，他從未說過一句謝謝。', emotion: '空洞' },
-    { char: 'a', line: '我知道。但這不是你殺他的理由。', emotion: '疲憊' },
-    { char: 'c', line: '（坐下，雙手捂臉）這一切……什麼時候才會結束？', emotion: '精疲力竭' },
-  ],
-  decisions: [
-    { char: '管家林威廉', intent: '第一次說出壓抑的三十年', because: '防線崩潰後反而能說出真心話' },
-    { char: '偵探陳修遠', intent: '不追打，讓對方自己說完', because: '有些真相需要安靜才能浮現' },
-    { char: '繼承人蘇艾倫', intent: '精神耗盡，連自保的力氣都沒了', because: '一整夜的恐懼在這一刻完全釋放' },
-  ],
-  emotions: { a: { anger: 2, fear: 2, trust: 5 }, b: { anger: 2, fear: 7, trust: 3 }, c: { anger: 2, fear: 5, trust: 4 } },
-}
+// ─── Director intervention override scripts ───────────────────────────────────
+// When user manually clicks an intervention, this overrides the current beat
 
-// ─── Director intervention scripts ────────────────────────────────────────────
-
-const DIRECTOR_SCRIPTS = {
+const MANUAL_INTERVENTIONS = {
   '突然停電': {
-    flag: 'escape_attempt',
-    narration: '燈光在一聲悶響後全部熄滅。黑暗像布幕一樣落下，三個人誰都沒有動——或者說，幾乎沒有。',
+    narration: '燈光在一聲悶響後全部熄滅。黑暗像布幕一樣落下，沒有人說話，只有呼吸聲。',
     lines: [
       { char: 'a', line: '（沉聲）誰都不准移動。', emotion: '警覺' },
-      { char: 'b', line: '（在黑暗中）保險絲應該在地下室……我去——', emotion: '試圖離開' },
-      { char: 'c', line: '不要讓他走！別讓他一個人去！', emotion: '尖叫' },
+      { char: 'b', line: '保險絲應該在……我去——', emotion: '試圖離開' },
+      { char: 'c', line: '不要讓他走！', emotion: '尖叫' },
     ],
-    effect: '停電讓林威廉試圖趁亂離開——這個舉動被所有人記住了。後續故事將走向「逃脫未遂」路線。',
+    effect: '停電讓林威廉試圖趁亂離開，但被蘇艾倫一句話攔住。',
     emotions: { a: { anger: 5, fear: 3, trust: 2 }, b: { anger: 3, fear: 9, trust: 2 }, c: { anger: 6, fear: 10, trust: 1 } },
   },
   '其中一人說謊': {
-    flag: null,
-    narration: '陳修遠停下腳步，把剛才聽到的話在腦海裡重放了一遍。有什麼地方不對——像拼圖裡一塊被強迫塞進去的碎片。',
+    narration: '陳修遠停下腳步，把剛才聽到的話在腦海裡重放了一遍。有什麼地方不對。',
     lines: [
-      { char: 'a', line: '等等。你剛才說「九點半離開」——但你一分鐘前說的是「九點」。', emotion: '銳利' },
-      { char: 'b', line: '我……我說錯了。是九點半，那天我記不太清楚。', emotion: '強行鎮定' },
-      { char: 'c', line: '（倒抽一口氣）他說謊了。他一直在說謊。', emotion: '驚恐' },
+      { char: 'a', line: '等等。你剛才說九點半——但你一分鐘前說的是九點。', emotion: '銳利' },
+      { char: 'b', line: '我……我說錯了。', emotion: '強行鎮定' },
+      { char: 'c', line: '他說謊了。他一直在說謊。', emotion: '驚恐' },
     ],
-    effect: '矛盾的時間線被公開指出，林威廉的壓力驟增。',
+    effect: '矛盾的時間線被公開指出，林威廉壓力驟增。',
     emotions: { a: { anger: 4, fear: 1, trust: 2 }, b: { anger: 4, fear: 9, trust: 2 }, c: { anger: 7, fear: 9, trust: 1 } },
   },
   '門外傳來陌生腳步聲': {
-    flag: 'escape_attempt',
-    narration: '走廊上傳來腳步聲，緩慢而有節奏，在門口停下了。三個人同時轉頭——但門，沒有打開。',
+    narration: '走廊上傳來腳步聲，緩慢而有節奏，在門口停下了。三個人同時轉頭——但門沒有打開。',
     lines: [
       { char: 'c', line: '有人在外面。有人在聽我們說話。', emotion: '顫抖' },
       { char: 'a', line: '（走向門口）誰在那裡？', emotion: '戒備' },
-      { char: 'b', line: '（沒有移動，目光卻飄向另一個方向）……也許是老宅的聲音，這棟房子很老了。', emotion: '刻意平靜' },
+      { char: 'b', line: '……也許是老宅的聲音。這棟房子很老了。', emotion: '刻意平靜，目光飄向別處' },
     ],
-    effect: '林威廉的目光飄向別處——他知道那是誰。後續故事將走向「逃脫未遂」路線。',
+    effect: '林威廉的目光飄向別處，他知道那是誰。',
     emotions: { a: { anger: 4, fear: 3, trust: 2 }, b: { anger: 3, fear: 8, trust: 3 }, c: { anger: 5, fear: 10, trust: 1 } },
   },
   '有人發現密室中的遺書': {
-    flag: 'evidence',
-    narration: '蘇艾倫從書架後面抽出一個信封，上面用老式鋼筆寫著：「若我死於非命，請交給——」後面的字被撕掉了。',
+    narration: '信封從書架後面掉出來，上面用老式鋼筆寫著：「若我死於非命，請交給——」後面的字被撕掉了。',
     lines: [
-      { char: 'c', line: '這……這是叔叔的字跡。他知道會發生這件事。他早就知道。', emotion: '震驚' },
-      { char: 'a', line: '（接過信封）信封被拆開過。而且不是今天拆的。', emotion: '沉著觀察' },
-      { char: 'b', line: '（非常輕聲）那封信……不應該還在。', emotion: '失控的一瞬間' },
+      { char: 'c', line: '這是叔叔的字跡。他知道會發生這件事。他早就知道。', emotion: '震驚' },
+      { char: 'a', line: '（接過）信封被拆開過。而且不是今天拆的。', emotion: '沉著' },
+      { char: 'b', line: '（極輕）那封信……不應該還在。', emotion: '失控的一瞬間' },
     ],
-    effect: '林威廉不小心說出「不應該還在」——遺書的存在動搖了他的防線。後續故事將走向「物證」路線。',
+    effect: '林威廉說出「不應該還在」，徹底暴露知情。',
     emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 6, fear: 9, trust: 2 } },
   },
   '警笛聲從遠處傳來': {
-    flag: null,
-    narration: '遠處傳來斷斷續續的警笛聲，在雪夜裡格外清晰。時間忽然變得很具體——它正在倒數。',
+    narration: '警笛聲從雪地裡穿透過來，清晰而急促。時間忽然變得很具體。',
     lines: [
-      { char: 'b', line: '（第一次表現出真正的緊張）警察……這麼快。', emotion: '慌亂' },
-      { char: 'a', line: '大約還有十分鐘。十分鐘後你們說的每一句話都會變成正式紀錄。', emotion: '壓迫' },
-      { char: 'c', line: '那我現在要說實話嗎？（看向林威廉）還是等一下再說？', emotion: '抉擇邊緣' },
+      { char: 'b', line: '警察……這麼快。', emotion: '慌亂' },
+      { char: 'a', line: '大約還有十分鐘。十分鐘後每句話都是正式紀錄。', emotion: '壓迫' },
+      { char: 'c', line: '那我現在要說實話了。', emotion: '決定' },
     ],
-    effect: '外部時間壓力讓所有人的算計都在加速。',
-    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 6, fear: 8, trust: 3 } },
+    effect: '警笛加速了所有人的計算，蘇艾倫做出抉擇。',
+    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 4, fear: 7, trust: 4 } },
   },
   '其中一人情緒突然崩潰': {
-    flag: 'breakdown',
-    narration: '沒有任何預兆。蘇艾倫的茶杯掉在地上，碎成幾片。然後她開始哭——壓抑很久的那種，沒有眼淚，只有聲音。',
+    narration: '茶杯掉在地上，碎成幾片。蘇艾倫開始哭——壓抑很久的那種，沒有眼淚，只有聲音。',
     lines: [
-      { char: 'c', line: '我改了遺囑！好，我說了！我改了遺囑，叔叔發現了，但我沒有殺他！我沒有！', emotion: '崩潰' },
-      { char: 'a', line: '（靜靜等她說完）我知道不是你。', emotion: '平靜' },
+      { char: 'c', line: '我改了遺囑！好，我說了！但我沒有殺他！我沒有！', emotion: '崩潰' },
+      { char: 'a', line: '我知道不是你。', emotion: '平靜' },
       { char: 'b', line: '（臉色變得非常難看）……', emotion: '沉默，眼神不對' },
     ],
-    effect: '蘇艾倫主動坦承遺囑的事，把調查方向完全指向林威廉。後續故事將走向「崩潰」路線。',
+    effect: '蘇艾倫主動坦承，把調查方向完全指向林威廉。',
     emotions: { a: { anger: 3, fear: 1, trust: 4 }, b: { anger: 5, fear: 10, trust: 1 }, c: { anger: 3, fear: 7, trust: 5 } },
   },
   '兩人發生激烈肢體衝突': {
-    flag: 'breakdown',
-    narration: '林威廉的手突然抓住了陳修遠的衣領。這個動作讓所有人都愣住了——三十年的隱忍，在這一秒撕開了一個口。',
+    narration: '林威廉的手突然抓住了陳修遠的衣領。三十年的隱忍，在這一秒撕開了一個口。',
     lines: [
-      { char: 'b', line: '你以為你是誰？（聲音在顫）你以為真相能改變什麼？', emotion: '憤怒崩潰' },
-      { char: 'a', line: '（沒有反抗，平靜看著他）能。對你不行，對其他人行。', emotion: '冰冷' },
-      { char: 'c', line: '（尖叫）住手！（試圖拉開）住手！', emotion: '驚恐' },
+      { char: 'b', line: '你以為真相能改變什麼？', emotion: '憤怒崩潰' },
+      { char: 'a', line: '（沒有反抗）能。對你不行，對其他人行。', emotion: '冰冷' },
+      { char: 'c', line: '住手！', emotion: '驚恐' },
     ],
-    effect: '林威廉的衝動讓他徹底失去理智上的優勢。後續故事將走向「崩潰」路線。',
+    effect: '肢體衝突讓林威廉失去理智上的最後優勢。',
     emotions: { a: { anger: 5, fear: 2, trust: 2 }, b: { anger: 10, fear: 9, trust: 1 }, c: { anger: 7, fear: 10, trust: 1 } },
-  },
-  '有人突然失聲痛哭': {
-    flag: 'breakdown',
-    narration: '沒有人知道是從哪一刻開始的——蘇艾倫坐在角落，臉埋在膝蓋裡，哭聲像從很遠的地方傳來的。',
-    lines: [
-      { char: 'c', line: '（哭聲中）我只是不想失去那份遺產。我只是……我只是很害怕。', emotion: '真實的脆弱' },
-      { char: 'a', line: '（輕聲）我知道。', emotion: '沉默地站在旁邊' },
-      { char: 'b', line: '（轉頭，看向窗外，背對兩人）……', emotion: '無法面對' },
-    ],
-    effect: '哭聲讓房間裡某些東西鬆開了。後續故事將走向「崩潰」路線。',
-    emotions: { a: { anger: 3, fear: 1, trust: 4 }, b: { anger: 4, fear: 9, trust: 2 }, c: { anger: 3, fear: 8, trust: 4 } },
-  },
-  '死者的日記被發現': {
-    flag: 'evidence',
-    narration: '日記夾在書架最高層，一本普通的黑色封面。翻開最後一頁，日期是三天前，字跡很亂，但最後一行清晰：「他今晚會來。」',
-    lines: [
-      { char: 'a', line: '（讀出聲音）「他今晚會來。我不打算逃。」（放下日記）他在等你。', emotion: '平靜的重量' },
-      { char: 'b', line: '（長時間沉默）……他從來沒有逃過任何事。', emotion: '說的像是在緬懷' },
-      { char: 'c', line: '（哽咽）叔叔知道……叔叔一直知道。', emotion: '哀傷' },
-    ],
-    effect: '日記揭示死者預知危險卻選擇等待——林威廉的防線從內部開始崩潰。後續故事將走向「物證」路線。',
-    emotions: { a: { anger: 4, fear: 1, trust: 3 }, b: { anger: 4, fear: 9, trust: 2 }, c: { anger: 3, fear: 7, trust: 4 } },
-  },
-  '外頭暴雨來襲': {
-    flag: null,
-    narration: '雪停了。取而代之的是暴雨，打在窗上像無數個細小的拳頭。燈光閃了一下，維持住了。沒有人說話，三個人都聽著那個聲音。',
-    lines: [
-      { char: 'c', line: '（輕聲）雨……這個時候怎麼會下雨。', emotion: '困惑中有一種奇異的平靜' },
-      { char: 'a', line: '（看著窗外）警察的車會慢一點。', emotion: '思考' },
-      { char: 'b', line: '（沒有說話，輕輕閉上了眼睛）', emotion: '某種解脫還是絕望，看不出來' },
-    ],
-    effect: '雨延遲了外援，時間的壓力改變了方向。',
-    emotions: { a: { anger: 3, fear: 2, trust: 3 }, b: { anger: 3, fear: 8, trust: 3 }, c: { anger: 4, fear: 7, trust: 3 } },
   },
 }
 
-// Generic fallback for unrecognized interventions
 const GENERIC_INTERVENTION = [
-  {
-    narration: '某件事在這個時刻突然發生，改變了房間裡的重力。沒有人預料到。',
+  { narration: '某件事在這個時刻突然發生，改變了房間裡的重力。',
     lines: [
       { char: 'a', line: '（停下）這改變了一些事。', emotion: '重新計算' },
-      { char: 'b', line: '（按捺，沒有說話）', emotion: '隱忍' },
-      { char: 'c', line: '現在怎麼辦？告訴我現在怎麼辦。', emotion: '依賴' },
+      { char: 'b', line: '（沒有說話）', emotion: '按捺' },
+      { char: 'c', line: '現在怎麼辦？告訴我怎麼辦。', emotion: '依賴' },
     ],
     effect: '突發事件讓局勢出現新的變量。',
     emotions: { a: { anger: 4, fear: 2, trust: 2 }, b: { anger: 4, fear: 9, trust: 2 }, c: { anger: 5, fear: 9, trust: 2 } },
   },
-  {
-    narration: '有些事情一旦發生，就再也無法假裝沒看見。三個人都知道這一點。',
+  { narration: '有些事情一旦發生，就再也無法假裝沒看見。',
     lines: [
-      { char: 'a', line: '有意思。這讓情況複雜了一點。', emotion: '分析' },
-      { char: 'c', line: '（退後一步）這不是我造成的。', emotion: '防衛' },
-      { char: 'b', line: '也許我們應該先冷靜下來。', emotion: '強迫鎮定' },
+      { char: 'a', line: '有意思。情況複雜了一點。', emotion: '分析' },
+      { char: 'c', line: '這不是我造成的。', emotion: '防衛' },
+      { char: 'b', line: '也許我們先冷靜下來。', emotion: '強迫鎮定' },
     ],
-    effect: '事件讓三人重新評估彼此的立場。',
+    effect: '三人重新評估彼此的立場。',
     emotions: { a: { anger: 4, fear: 2, trust: 2 }, b: { anger: 4, fear: 8, trust: 2 }, c: { anger: 6, fear: 9, trust: 1 } },
   },
 ]
@@ -370,7 +281,6 @@ const GENERIC_NARRATIONS = [
   '某個東西在氣氛中繃緊，像快要斷裂的弦。',
   '沒有人願意先開口，每個人都在等別人暴露更多。',
   '時間以奇怪的方式緩慢流動，每一秒都帶著重量。',
-  '燈光在某個瞬間閃了一下，然後恢復。',
 ]
 
 function genericLine(em) {
@@ -379,7 +289,6 @@ function genericLine(em) {
   if (em.trust <= 2) return pick(['你說的每一件事我都要重新想一遍。', '也許你才是最該被懷疑的人。'])
   return pick(['我們需要把已知的東西整理一遍。', '先冷靜，把事情說清楚。', '有些東西還沒說出來。'])
 }
-
 function emotionLabel(em) {
   if (em.anger >= 7) return '憤怒'
   if (em.fear >= 7)  return '恐懼'
@@ -391,183 +300,75 @@ function emotionLabel(em) {
 
 // ─── Local report generation ──────────────────────────────────────────────────
 
-function generateLocalReport(prompt, endingPath) {
-  // Extract character names from prompt if possible
+function generateLocalReport(prompt) {
   const nameMatches = [...prompt.matchAll(/角色[A-Z]\(([^)]+)\)/g)].map(m => m[1])
   const [charA, charB, charC] = nameMatches.length >= 3
-    ? nameMatches
-    : ['偵探陳修遠', '管家林威廉', '繼承人蘇艾倫']
+    ? nameMatches : ['偵探陳修遠', '管家林威廉', '繼承人蘇艾倫']
 
-  const path = endingPath || 'default'
-
-  const REPORTS = {
-    default: {
-      summary: `${charA}以一枚領帶別針作為物證，將${charB}的防線逼至崩潰。整場戲劇的核心張力在於：兇手是服侍了三十年的人，動機是三十年的恨意與一句未說出口的謝謝。${charC}的遺囑秘密成為次線，既是她的弱點，也是她最終脫身的資本。`,
-      prose: `書房裡的燭火終於熄滅了最後一截。陳修遠把那枚金色別針放在桌上的時候，沒有說話——有些事情不需要說。林威廉看著那枚別針，看了很久，然後他的肩膀慢慢沉下去，像一棟失去地基的房子。蘇艾倫靠著牆，眼睛睜得很大，她第一次意識到，她一整夜都和兇手站在同一個房間裡。`,
-      arcs: [
-        { char: charA, arc: '從職業偵探到承認自己與死者的情感——案子結束後，他才能只是一個人' },
-        { char: charB, arc: '三十年的過度禮貌在最後一刻撕裂，暴露出一直壓抑的恨意與疲憊' },
-        { char: charC, arc: '從驚慌自保到主動坦承，秘密說出口的那一刻，恐懼的性質改變了' },
-      ],
-      usable_lines: [
-        `「先說清楚一件事：在警察到來之前，沒有人可以離開這棟房子。」`,
-        `「林先生服侍老爺三十年。三十年，一個人可以累積很多恨意。」`,
-        `「這枚別針在死者手裡找到的。林先生，這是您的吧？」`,
-        `「天啊，原來是你。」`,
-      ],
-      tension: '別針放上桌的那一刻——物證讓所有語言失效，林威廉沉默的三秒是全場最重的停頓',
-      paths: [
-        { label: '林威廉的辯護', desc: '他試圖解釋別針是被偷走的，故事進入舉證與反舉證的拉鋸，真正的不在場證明被一層層拆解' },
-        { label: '蘇艾倫的交易', desc: '蘇艾倫用遺囑的事換取林威廉的認罪，兩個秘密互相抵消，但代價是什麼？' },
-        { label: '陳修遠的秘密', desc: '他與死者的舊情被蘇艾倫說出，偵探身份產生動搖，案子有了第四個面向' },
-      ],
-    },
-    evidence: {
-      summary: `遺書成為整場戲劇的核心物件——死者早就知道，卻選擇等待而非逃跑。這個事實讓${charB}的崩潰不是因為被逮，而是因為發現自己的三十年對抗，對方一直都知道。${charA}用沉默代替逼問，讓遺書自己說話。`,
-      prose: `那封信攤開在桌上。死者用顫抖的手寫下了一個名字，然後在名字下面畫了一條線——像是最後的確認，也像是原諒。林威廉看著那個名字，長時間沒有說話。他不是在計算，他只是第一次，沒有辦法說任何話。蘇艾倫捂住嘴，她想到的不是遺產，她想到的是叔叔一個人在書房裡寫這封信的那個夜晚。`,
-      arcs: [
-        { char: charA, arc: '退到後面，讓遺書說話——他學會了什麼時候沉默比逼問更有力量' },
-        { char: charB, arc: '崩潰的原因不是被識破，而是發現自己的對手比自己想的更了解他' },
-        { char: charC, arc: '第一次想起叔叔這個人，而不只是那份遺產' },
-      ],
-      usable_lines: [
-        `「信封被拆開過。而且不是今天拆的。」`,
-        `「那封信……不應該還在。」`,
-        `「他今晚會來。我不打算逃。」`,
-        `「叔叔知道……叔叔一直知道。」`,
-      ],
-      tension: '林威廉讀到遺書上自己名字的那一刻——三十年的對抗在這一句話裡有了答案',
-      paths: [
-        { label: '遺書的後半段', desc: '被撕掉的那半張紙藏著什麼？找到它的人將掌握另一個秘密' },
-        { label: '死者的選擇', desc: '他為什麼知道卻不逃？這個問題的答案將改變所有人對他的理解' },
-        { label: '林威廉的懺悔', desc: '他開口說出三十年的事，但說的是請求原諒，還是解釋動機？' },
-      ],
-    },
-    breakdown: {
-      summary: `蘇艾倫的崩潰打破了房間裡所有人維持的平衡。她主動坦承遺囑的事，把嫌疑從自己身上推開，卻也讓${charB}失去了最後一道防火牆。整場戲最動人的時刻是${charB}坐在地上說出那句話——不是認罪，而是解釋三十年的疲憊。`,
-      prose: `林威廉靠著牆坐了下去。沒有戲劇性，沒有掙扎，像一個終於可以卸下重量的人。蘇艾倫還在哭，但聲音已經小了。陳修遠蹲下來，和他同樣的高度，不是作為偵探，只是作為一個人，聽他說完那句：「他說他要把我趕走。三十年後，他說要把我趕走。」`,
-      arcs: [
-        { char: charA, arc: '第一次放下偵探的距離——他蹲下來，選擇以人的方式靠近' },
-        { char: charB, arc: '動機不是恨，是被拋棄——這讓他從兇手變成了一個更複雜的人' },
-        { char: charC, arc: '在憤怒和同情之間搖擺，因為她也有不能說的秘密，所以她懂得一點' },
-      ],
-      usable_lines: [
-        `「我改了遺囑！但我沒有殺他！我沒有！」`,
-        `「我知道不是你。」`,
-        `「他說他要把我趕走。三十年後，他說要把我趕走。」`,
-        `「但這不是你殺他的理由。」`,
-      ],
-      tension: '林威廉坐在地上說出那句話的瞬間——動機從恨意變成被拋棄，整個故事的重量改變了',
-      paths: [
-        { label: '三十年的細節', desc: '林威廉開始講那三十年裡發生的事，每一個細節都讓他的動機更清晰，也更令人心疼' },
-        { label: '蘇艾倫的選擇', desc: '她坦承了遺囑，但遺囑的內容是什麼？那份文件還存在嗎？' },
-        { label: '陳修遠的沉默', desc: '他沒有立刻打電話叫警察——這個停頓意味著什麼？' },
-      ],
-    },
-    escape_attempt: {
-      summary: `停電創造了林威廉唯一的逃跑機會，但他選錯了方向。蘇艾倫無意說出「保險絲箱在地下室，不在走廊」，成為全場最關鍵的一句話——不是偵探，是一個在這裡住了二十年的人，拆穿了他的謊言。`,
-      prose: `燈光亮起時，林威廉就站在門口，和陳修遠面對面。他沒有說話，只是看著對方的眼睛，像是終於承認了一件事——他輸了，而且早就知道會輸。蘇艾倫靠著牆，回想她剛才說的那句話，那句她根本沒有想過要說的話，忽然明白有些事情的結局，是被一句無心的話決定的。`,
-      arcs: [
-        { char: charA, arc: '在停電前就數好了每個人的位置——他的冷靜不是天賦，是二十年的訓練' },
-        { char: charB, arc: '最後的算計在慌亂中崩潰——謊言說錯地點，被他最不在意的人拆穿' },
-        { char: charC, arc: '無意中說出關鍵的話——她意識到，自己也是這個結局的一部分' },
-      ],
-      usable_lines: [
-        `「誰都不准移動。」`,
-        `「保險絲應該在地下室……我去——」`,
-        `「保險絲箱在地下室。不在走廊。我知道，我在這裡住了二十年。」`,
-        `「你要去哪裡？」`,
-      ],
-      tension: '燈光亮起、林威廉站在門口的那一秒——所有的計算在這個畫面裡同時結束',
-      paths: [
-        { label: '林威廉的目的地', desc: '他要去哪裡？走廊通向的那個地方藏著什麼？找到答案會打開另一條故事線' },
-        { label: '蘇艾倫的自責', desc: '她開始懷疑自己說的那句話是否改變了某人的命運，這個問題在她腦海裡無法停止' },
-        { label: '停電的起因', desc: '是意外，還是有人切斷了電源？如果是後者，那個人是誰？' },
-      ],
-    },
+  return {
+    summary: `一場封閉空間裡的謀殺案，三個人各自帶著秘密，在停電、遺書、警笛的接連衝擊下逐步瓦解。${charB}試圖在停電中逃跑，卻被${charC}一句無心的話拆穿了謊言。遺書揭示死者早已知情，選擇等待而非逃跑。最終${charC}主動坦承，${charB}說出被拋棄的三十年，${charA}放下偵探的距離，蹲下來聽他說完。`,
+    prose: `書房裡只剩警笛聲和呼吸聲。林威廉靠著牆坐了下去，不是被推倒，是自己選擇坐下的。蘇艾倫說完了所有事——遺囑、叔叔、那個她以為只有自己知道的秘密。陳修遠蹲下來，和林威廉同樣的高度。「他說他要把我趕走，」林威廉說，「三十年後，他說要把我趕走。」窗外的雪還在下。沒有人說話，但每個人都聽到了。`,
+    arcs: [
+      { char: charA, arc: '從掌控現場的偵探，到蹲下來以人的方式靠近——案子結束後，他才能只是一個人' },
+      { char: charB, arc: '三十年的過度禮貌在停電那一刻撕裂；被遺書擊潰後，說出的不是認罪，而是被拋棄的事實' },
+      { char: charC, arc: '從驚慌自保到無意間成為關鍵證人，再到主動坦承——求生欲在最後一刻轉化成了勇氣' },
+    ],
+    usable_lines: [
+      `「誰都不准移動。」`,
+      `「保險絲箱在地下室。不在走廊。我知道，我在這裡住了二十年。」`,
+      `「那封信……不應該還在。」`,
+      `「他說他要把我趕走。三十年後，他說要把我趕走。」`,
+      `「但這不是你殺他的理由。」`,
+    ],
+    tension: '停電後燈光亮起、林威廉站在門口的那一秒——所有的計算在這個畫面裡同時結束，沒有人需要再說什麼',
+    paths: [
+      { label: '遺書的後半段', desc: '被撕掉的那半張紙藏著什麼？找到它的人將掌握另一個秘密，死者的「原諒」是否也在那裡？' },
+      { label: '三十年的細節', desc: '林威廉開口說出那三十年裡發生的事，每一個細節都讓他的動機更清晰，也更令人無法簡單定義' },
+      { label: '蘇艾倫的遺囑', desc: '她坦承了改遺囑，但遺囑的內容是什麼？那份文件還存在嗎？繼承的問題仍然懸而未決' },
+    ],
   }
-
-  return REPORTS[path] || REPORTS.default
 }
 
 // ─── Main generation function ─────────────────────────────────────────────────
 
 function generateLocal(systemPrompt, intervention) {
-  const hasIntervention = intervention &&
+  const hasManualIntervention = intervention &&
     !intervention.includes('繼續推進') &&
     !intervention.includes('只輸出JSON')
 
   const isDefault = isDefaultStory(systemPrompt)
 
-  // ── Director intervention ──
-  if (hasIntervention) {
-    if (isDefault) {
-      const key = Object.keys(DIRECTOR_SCRIPTS).find(k => intervention.includes(k))
-      const script = key ? DIRECTOR_SCRIPTS[key] : pick(GENERIC_INTERVENTION)
-
-      // Set ending flag if this intervention has one
-      if (key && DIRECTOR_SCRIPTS[key].flag && !_ending) {
-        _ending = DIRECTOR_SCRIPTS[key].flag
-        _flags.add(_ending)
-      }
-
-      return {
-        narration: script.narration,
-        lines: script.lines,
-        decisions: script.lines.map(l => ({ char: l.char, intent: '對突發事件反應', because: '導演指令觸發' })),
-        director_effect: script.effect || `導演指令「${intervention}」已觸發。`,
-        emotions: script.emotions,
-      }
-    }
-
-    // Generic characters — simple intervention
-    const generic = pick(GENERIC_INTERVENTION)
-    const ids = extractCharIds(systemPrompt)
-    const cur = extractEmotions(systemPrompt)
-    const newEm = {}
-    for (const id of ids) {
-      const e = cur[id] || { anger: 3, fear: 3, trust: 5 }
-      newEm[id] = { anger: clamp(e.anger + 1), fear: clamp(e.fear + 1), trust: clamp(e.trust - 1) }
-    }
+  // ── Manual director intervention overrides the current beat ──
+  if (hasManualIntervention && isDefault) {
+    const key = Object.keys(MANUAL_INTERVENTIONS).find(k => intervention.includes(k))
+    const script = key ? MANUAL_INTERVENTIONS[key] : pick(GENERIC_INTERVENTION)
     return {
-      narration: generic.narration,
-      lines: generic.lines.filter(l => ids.includes(l.char)),
-      decisions: [],
-      director_effect: `導演指令「${intervention}」已觸發。`,
-      emotions: newEm,
+      narration: script.narration,
+      lines: script.lines,
+      decisions: script.lines.map(l => ({ char: l.char, intent: '對突發事件反應', because: '導演指令觸發' })),
+      director_effect: script.effect || `導演指令「${intervention}」已觸發。`,
+      emotions: script.emotions,
     }
   }
 
-  // ── Scripted story progression ──
+  // ── Scripted linear story ──
   if (isDefault) {
-    // Opening (rounds 0–2)
-    if (_round < OPENING_BEATS.length) {
-      const beat = OPENING_BEATS[_round++]
-      return { ...beat, director_effect: '' }
-    }
-
-    // Mid-section (round 3) — branching based on flags
-    if (_round === OPENING_BEATS.length) {
-      _round++
-      const path = _ending || 'default'
-      const beat = MID_BEATS[path] || MID_BEATS.default
-      return { ...beat, director_effect: '' }
-    }
-
-    // Climax (round 4) — branching ending
-    if (_round === OPENING_BEATS.length + 1) {
-      _round++
-      const path = _ending || 'default'
-      const beat = CLIMAX[path] || CLIMAX.default
-      return { ...beat, director_effect: '' }
-    }
-
-    // Epilogue (round 5+)
+    const beatIndex = Math.min(_round, STORY.length - 1)
+    const beat = STORY[beatIndex]
     _round++
-    return { ...EPILOGUE, director_effect: '' }
+
+    return {
+      narration: beat.narration,
+      lines: beat.lines,
+      decisions: beat.decisions,
+      director_effect: beat.director_event
+        ? `【導演介入】${beat.director_event}`
+        : '',
+      emotions: beat.emotions,
+    }
   }
 
-  // ── Generic characters ──
+  // ── Generic characters (custom setup) ──
   const ids = extractCharIds(systemPrompt)
   const cur = extractEmotions(systemPrompt)
   const count = Math.random() < 0.35 ? 1 : Math.random() < 0.6 ? 2 : Math.min(3, ids.length)
@@ -575,13 +376,20 @@ function generateLocal(systemPrompt, intervention) {
   const newEm = {}
   for (const id of ids) {
     const e = cur[id] || { anger: 3, fear: 3, trust: 5 }
-    newEm[id] = { anger: clamp(e.anger + (Math.random() < 0.5 ? 1 : -1)), fear: clamp(e.fear + (Math.random() < 0.5 ? 1 : -1)), trust: clamp(e.trust + (Math.random() < 0.5 ? 1 : -1)) }
+    newEm[id] = {
+      anger: clamp(e.anger + (Math.random() < 0.5 ? 1 : -1)),
+      fear:  clamp(e.fear  + (Math.random() < 0.5 ? 1 : -1)),
+      trust: clamp(e.trust + (Math.random() < 0.5 ? 1 : -1)),
+    }
   }
   return {
     narration: pick(GENERIC_NARRATIONS),
-    lines: speakers.map(id => { const e = cur[id] || { anger: 3, fear: 3, trust: 5 }; return { char: id, line: genericLine(e), emotion: emotionLabel(e) } }),
+    lines: speakers.map(id => {
+      const e = cur[id] || { anger: 3, fear: 3, trust: 5 }
+      return { char: id, line: genericLine(e), emotion: emotionLabel(e) }
+    }),
     decisions: [],
-    director_effect: '',
+    director_effect: hasManualIntervention ? `導演指令「${intervention}」已觸發。` : '',
     emotions: newEm,
   }
 }
@@ -596,9 +404,8 @@ export async function callClaude(messages, systemPrompt = '', options = {}) {
   if (engine === 'local') {
     await new Promise(r => setTimeout(r, 700 + Math.random() * 400))
 
-    // Report request detection — prompt starts with 你是資深編劇顧問
     if (intervention.startsWith('你是資深編劇顧問')) {
-      const payload = generateLocalReport(intervention, _ending)
+      const payload = generateLocalReport(intervention)
       return { parsed: payload, raw: JSON.stringify(payload) }
     }
 
