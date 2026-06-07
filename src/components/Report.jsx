@@ -52,7 +52,12 @@ ${charIds.map(id => `角色${id.toUpperCase()}(${chars[id].name})秘密：${char
 
   const copy = () => {
     if (!data) return
-    const t = `【情節推進建議書】\n\n▌摘要\n${data.summary}\n\n▌小說正文草稿\n${data.prose || ''}\n\n▌角色弧線\n${data.arcs?.map(a => `${a.char}：${a.arc}`).join('\n')}\n\n▌最高張力\n${data.tension}\n\n▌三條岔路\n${data.paths?.map(p => `${p.label}\n${p.desc}`).join('\n\n')}`
+    const plotPoints = data.story?.plot_points?.map((pt, i) => `${i + 1}. ${pt}`).join('\n') || data.summary || ''
+    const draft = data.story?.draft || data.prose || ''
+    const lines = data.usable_lines?.map(item =>
+      typeof item === 'object' ? `${item.line}\n   ——${item.speaker}，${item.tone}` : item
+    ).join('\n') || ''
+    const t = `【情節推進建議書】\n\n▌本場情節\n${plotPoints}\n\n▌小說草稿\n${draft}\n\n▌角色弧線\n${data.arcs?.map(a => `${a.char}：${a.arc}`).join('\n')}\n\n▌最高張力\n${data.tension}\n\n▌可用台詞\n${lines}\n\n▌三條岔路\n${data.paths?.map(p => `${p.label}\n${p.desc}`).join('\n\n')}`
     navigator.clipboard.writeText(t).then(() => alert('已複製！'))
   }
 
@@ -86,15 +91,26 @@ ${charIds.map(id => `角色${id.toUpperCase()}(${chars[id].name})秘密：${char
 
         {data && (
           <>
-            <Sec title="劇情摘要">
-              <p style={{ fontSize: 13, lineHeight: 1.85, color: T.text, fontFamily: 'Georgia, serif' }}>{data.summary}</p>
+            {/* ── 本場發生了什麼（情節清單 + 草稿合併） ── */}
+            <Sec title="本場情節">
+              {/* 情節清單 */}
+              {(data.story?.plot_points || []).map((pt, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, padding: '0.3rem 0', borderBottom: `1px solid ${T.border}`, alignItems: 'flex-start' }}>
+                  <span style={{ color: T.accent, fontFamily: 'monospace', fontSize: 10, minWidth: 18, marginTop: 2 }}>{i + 1}</span>
+                  <span style={{ fontSize: 12.5, color: T.text, lineHeight: 1.75, fontFamily: 'Georgia, serif' }}>{pt}</span>
+                </div>
+              ))}
+              {/* 相容舊版 summary */}
+              {!data.story && data.summary && (
+                <p style={{ fontSize: 13, lineHeight: 1.85, color: T.text, fontFamily: 'Georgia, serif', margin: 0 }}>{data.summary}</p>
+              )}
+              {/* 小說草稿段落 */}
+              {(data.story?.draft || data.prose) && (
+                <p style={{ fontSize: 13, lineHeight: 1.95, color: T.text2, fontFamily: 'Georgia, serif', marginTop: '0.9rem', marginBottom: 0, paddingTop: '0.75rem', borderTop: `1px solid ${T.border}` }}>
+                  {data.story?.draft || data.prose}
+                </p>
+              )}
             </Sec>
-
-            {data.prose && (
-              <Sec title="小說正文草稿">
-                <p style={{ fontSize: 13, lineHeight: 1.9, color: T.text, fontFamily: 'Georgia, serif' }}>{data.prose}</p>
-              </Sec>
-            )}
 
             <Sec title="角色情緒弧線">
               {data.arcs?.map((a, i) => (
@@ -105,14 +121,26 @@ ${charIds.map(id => `角色${id.toUpperCase()}(${chars[id].name})秘密：${char
             </Sec>
 
             <Sec title="當前最高張力">
-              <p style={{ fontSize: 13, color: T.red, fontFamily: 'Georgia, serif', lineHeight: 1.8 }}>{data.tension}</p>
+              <p style={{ fontSize: 13, color: T.red, fontFamily: 'Georgia, serif', lineHeight: 1.8, margin: 0 }}>{data.tension}</p>
             </Sec>
 
             {data.usable_lines?.length > 0 && (
               <Sec title="可用台詞">
-                {data.usable_lines.map((line, i) => (
-                  <div key={i} style={{ padding: '0.3rem 0', fontSize: 12, color: T.text2, lineHeight: 1.7, fontFamily: 'Georgia, serif' }}>{line}</div>
-                ))}
+                {data.usable_lines.map((item, i) => {
+                  const isObj = item && typeof item === 'object'
+                  return (
+                    <div key={i} style={{ padding: '0.45rem 0', borderBottom: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7, fontFamily: 'Georgia, serif' }}>
+                        {isObj ? item.line : item}
+                      </div>
+                      {isObj && (
+                        <div style={{ fontSize: 10.5, color: T.text3, marginTop: 3, fontFamily: 'monospace' }}>
+                          {item.speaker}　／　{item.tone}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </Sec>
             )}
 
