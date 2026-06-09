@@ -172,6 +172,7 @@ npm run codex-worker
 - AI 分析整場對話
 - 輸出：劇情摘要、小說正文草稿、角色弧線、可用台詞、最高張力點、三條後續岔路
 - 可根據本場劇情生成三張漫畫分鏡，並一鍵複製生圖提示到本地聊天產生圖片
+- Local 範例漫畫圖檔位於 `public/comics/`：`manor-hidden-compartment.png`、`butler-cuff-powder.png`、`snow-corridor-metal-glint.png`
 - 一鍵複製全文
 
 ---

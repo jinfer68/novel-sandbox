@@ -344,7 +344,7 @@ function generateLocalReport(prompt) {
         caption: '暗格開啟的瞬間，房間裡的每個人都多了一個秘密。',
         dialogue: '「這個撬痕不是第一次出現。」',
         palette: '冷灰陰影、火橘壁爐光、金屬反光',
-        image: '/novel-sandbox/comics/local-panel-1.png',
+        image: '/novel-sandbox/comics/manor-hidden-compartment.png',
         prompt: `近現代推理懸疑漫畫，雪夜莊園密室，壁爐旁暗格被撬開，低角度構圖，三人形成三角張力：${charA}蹲在暗格前，${charB}站得筆直卻手藏身後，${charC}臉色慘白後退半步。畫面有火光、灰白粉末、金屬撬痕與壓迫感，寫實分鏡，細膩表情，冷灰與火橘光影對比強烈。`,
       },
       {
@@ -353,7 +353,7 @@ function generateLocalReport(prompt) {
         caption: '最小的粉末，比最大的謊言更難擦乾淨。',
         dialogue: '「林先生，你袖口上的是什麼？」',
         palette: '窗外雪光、灰白粉末、壓抑冷色',
-        image: '/novel-sandbox/comics/local-panel-2.png',
+        image: '/novel-sandbox/comics/butler-cuff-powder.png',
         prompt: `連續漫畫第二格，特寫${charB}袖口邊緣沾著極淡灰白粉末，${charA}從畫面左側切入，眼神銳利，${charC}在背景失焦地盯著粉末。室內寒意明顯，窗外雪光透進來，莊園走廊陰影延伸，鏡頭緊迫，寫實懸疑風格，細節清楚，壓抑感強。`,
       },
       {
@@ -362,7 +362,7 @@ function generateLocalReport(prompt) {
         caption: '真正的線索，不在房間裡等人看見。',
         dialogue: '「你們聽見了嗎？」',
         palette: '雪夜冷光、高對比陰影、遠處金屬反光',
-        image: '/novel-sandbox/comics/local-panel-3.png',
+        image: '/novel-sandbox/comics/snow-corridor-metal-glint.png',
         prompt: `連續漫畫第三格，長走廊透視，門外雪壓窗框，門縫滲入冷風，遠處有一點金屬碰撞的反光，三人同時僵住。${charA}半轉身，${charB}背手克制，${charC}緊盯前方，氣氛封閉、猜忌、壓迫。高對比陰影、雪夜冷光、電影感分鏡，寫實漫畫風。`,
       },
     ],
