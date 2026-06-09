@@ -6,6 +6,7 @@ const PENDING_FILE = '/tmp/novel-sandbox-pending.json'
 const QUEUE_FILE = '/tmp/novel-sandbox-queue.json'
 const LOCAL_ENGINE_ENABLED = process.env.NOVEL_SANDBOX_ENGINE === 'local'
 const QUEUE_TTL_MS = Number(process.env.NOVEL_SANDBOX_QUEUE_TTL_MS || 10 * 60 * 1000)
+const PUBLIC_BASE = '/novel-sandbox/'
 
 const CHAR_IDS = ['a', 'b', 'c']
 
@@ -74,6 +75,10 @@ function pruneQueue(queue, activeSessionId) {
 function sendJson(res, payload) {
   res.setHeader('Content-Type', 'application/json')
   res.end(JSON.stringify(payload))
+}
+
+function publicAsset(path) {
+  return `${PUBLIC_BASE}${path.replace(/^\/+/, '')}`
 }
 
 function extractCharacterNames(systemPrompt = '') {
@@ -328,7 +333,7 @@ function generateReportResponse(request) {
         caption: '大雪封住所有出口，也封住每個人的退路。',
         dialogue: '「現在，誰都別急著離開。」',
         palette: '冷藍陰影、煤油燈金光、高反差黑線',
-        image: '/novel-sandbox/comics/manor-hidden-compartment.png',
+        image: publicAsset('comics/manor-hidden-compartment.png'),
         prompt: `懸疑推理漫畫分鏡，雪夜莊園密室，${names.a}站在門邊審視眾人，冷藍陰影與金色燈光，高反差墨線，緊張構圖`,
       },
       {
@@ -337,7 +342,7 @@ function generateReportResponse(request) {
         caption: '最完美的禮貌，先從指節開始破裂。',
         dialogue: '「先生，您這句話未免太武斷了。」',
         palette: '暗金、灰黑、局部紅色壓迫感',
-        image: '/novel-sandbox/comics/butler-cuff-powder.png',
+        image: publicAsset('comics/butler-cuff-powder.png'),
         prompt: `心理懸疑漫畫特寫，${names.b}攥緊托盤，禮貌微笑出現裂縫，背景人物模糊，暗金灰黑配色，戲劇性陰影`,
       },
       {
@@ -346,7 +351,7 @@ function generateReportResponse(request) {
         caption: '真相沒有回來，它只是換了藏身處。',
         dialogue: '「我剛才真的沒有看見它。」',
         palette: '猩紅點光、低飽和褐色、尖銳白色反光',
-        image: '/novel-sandbox/comics/snow-corridor-metal-glint.png',
+        image: publicAsset('comics/snow-corridor-metal-glint.png'),
         prompt: `推理漫畫關鍵發現畫格，${names.c}發現地毯邊緣金屬反光，眾人目光壓迫，猩紅點光與低飽和褐色，高張力分鏡`,
       },
     ],
