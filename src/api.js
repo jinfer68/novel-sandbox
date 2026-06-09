@@ -33,6 +33,14 @@ function extractEmotions(sp) {
 function clamp(v) { return Math.max(0, Math.min(10, v)) }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
 
+function cleanLocalIntervention(text = '') {
+  return String(text)
+    .replace(/^【導演介入】/, '')
+    .replace(/\n.*$/s, '')
+    .replace(/，?只輸出JSON。?$/, '')
+    .trim()
+}
+
 // ─── Linear story beats (8 rounds) ───────────────────────────────────────────
 //
 // director_event: shown in the director_effect field and logged as [ 導演 ]
@@ -298,6 +306,155 @@ function emotionLabel(em) {
   return '冷靜'
 }
 
+function extractCharacters(sp) {
+  const chars = {}
+  for (const match of sp.matchAll(/角色\d+\/([a-z])\(([^)]+)\)：性格「([^」]*)」目的「([^」]*)」關係「([^」]*)」秘密「([^」]*)」語氣「([^」]*)」/g)) {
+    chars[match[1]] = {
+      id: match[1],
+      name: match[2],
+      trait: match[3],
+      goal: match[4],
+      relation: match[5],
+      secret: match[6],
+      tone: match[7],
+    }
+  }
+  return chars
+}
+
+function interventionKind(text = '') {
+  if (/停電|黑暗|斷電|燈/.test(text)) return 'threat'
+  if (/說謊|抓包|證據|遺書|遺囑|資料|真相|錄音|監控/.test(text)) return 'evidence'
+  if (/腳步|門外|闖入|出現|進場|陌生/.test(text)) return 'arrival'
+  if (/警笛|倒數|時間|追兵|白塔|警察/.test(text)) return 'pressure'
+  if (/崩潰|哭|失控|尖叫|昏倒/.test(text)) return 'breakdown'
+  if (/衝突|打|推|抓|攻擊|槍|刀/.test(text)) return 'violence'
+  return 'turn'
+}
+
+function localEventNarration(event, kind) {
+  const base = event.replace(/^【導演介入】/, '').replace(/\n.*$/s, '').trim()
+  const prefix = {
+    threat: '燈光、聲音或環境突然改變，場景裡的安全感被抽走。',
+    evidence: '新的證據被推到所有人面前，原本能維持的謊言開始鬆動。',
+    arrival: '場景邊界被打破，有人或某種聲音闖進了原本封閉的局面。',
+    pressure: '外部壓力逼近，角色不再有時間慢慢編造理由。',
+    breakdown: '某個人的情緒防線忽然裂開，房間裡的節奏被迫改變。',
+    violence: '肢體距離被打破，衝突從語言滑向更危險的位置。',
+    turn: '導演指令讓原本的局面偏離軌道。',
+  }[kind]
+  return `${prefix}【${base}】成為本輪所有反應的中心。`
+}
+
+function eventLineFor(char, em, event, kind, mentioned) {
+  const name = char?.name || '我'
+  if (mentioned) {
+    return `你們都聽見了，這件事指向我。可如果我要回應「${event}」，我不會照你們期待的方式回應。`
+  }
+  if (kind === 'threat') {
+    if (em.fear >= 6) return `先別動。${event}不是背景聲，它是在逼我們露出反應。`
+    return `這種時候最有用的不是尖叫，是看誰第一個想離開。`
+  }
+  if (kind === 'evidence') {
+    if (em.trust <= 3) return `這份線索來得太剛好。我不相信剛好的東西。`
+    return `如果${event}是真的，那我們剛才有一半話都要重算。`
+  }
+  if (kind === 'arrival') {
+    return `別只看門口。真正知道${event}會發生的人，現在應該在看我們的表情。`
+  }
+  if (kind === 'pressure') {
+    if (em.anger >= 6) return `時間少了正好，省得大家繼續演。`
+    return `壓力來了。現在每句話都會比剛才更接近真相。`
+  }
+  if (kind === 'breakdown') {
+    return `看著我，${name}還撐得住。撐不住的人，才會把真正的東西說出口。`
+  }
+  if (kind === 'violence') {
+    return `退後。再往前一步，這場戲就不是對話了。`
+  }
+  return `「${event}」改變了局勢。現在每個人都得重新選邊。`
+}
+
+function shiftForIntervention(em, kind, mentioned) {
+  const boosts = {
+    threat: [0, 2, -1],
+    evidence: [1, 1, -2],
+    arrival: [0, 2, -1],
+    pressure: [1, 1, -1],
+    breakdown: [1, 2, 0],
+    violence: [2, 2, -2],
+    turn: [1, 1, -1],
+  }[kind]
+  return {
+    anger: clamp(em.anger + boosts[0] + (mentioned ? 1 : 0)),
+    fear: clamp(em.fear + boosts[1] + (mentioned ? 1 : 0)),
+    trust: clamp(em.trust + boosts[2]),
+  }
+}
+
+function lineAdjustmentFor(kind, event, index) {
+  const compactEvent = event.slice(0, 40)
+  const variants = {
+    threat: [
+      `先別動。${compactEvent}發生得太剛好，現在誰反應最快，誰就最可疑。`,
+      `這種變故不會憑空出現。有人在利用它改變局面。`,
+      `我聽見了。也看見了你們剛才的反應。`,
+    ],
+    evidence: [
+      `那麼，${compactEvent}就把剛才的話全都推翻了。`,
+      `如果這是真的，有人剛才至少說了一個謊。`,
+      `證據出現得越晚，越像是有人不希望它被看見。`,
+    ],
+    arrival: [
+      `別只看門口。${compactEvent}讓這裡不再只有我們幾個人。`,
+      `有人在外面，也可能早就在聽了。`,
+      `如果那不是意外，那就是警告。`,
+    ],
+    pressure: [
+      `${compactEvent}讓時間變少了。現在沒有空慢慢演。`,
+      `越接近結束，越容易有人犯錯。`,
+      `很好，壓力終於讓每個人都開始像自己了。`,
+    ],
+    breakdown: [
+      `${compactEvent}不是插曲，是有人撐不住了。`,
+      `崩潰時說出口的話，未必完整，但通常不全是假的。`,
+      `別急著安慰。讓他把下一句說完。`,
+    ],
+    violence: [
+      `退後。${compactEvent}一旦越線，這就不是問話了。`,
+      `動手只會證明你比剛才更害怕。`,
+      `現在誰先碰誰，誰就把理由交出來。`,
+    ],
+    turn: [
+      `${compactEvent}改變了我們剛才的順序。`,
+      `這件事讓原本的說法少了一塊。`,
+      `先回答這個，再談你剛才想藏的事。`,
+    ],
+  }[kind]
+  return variants[index % variants.length]
+}
+
+function adaptLinearBeat(beat, event) {
+  const kind = interventionKind(event)
+  return {
+    narration: `${beat.narration}\n\n導演介入：${localEventNarration(event, kind)}`,
+    lines: beat.lines.map((line, index) => ({
+      ...line,
+      line: `${line.line} ${lineAdjustmentFor(kind, event, index)}`,
+      emotion: `${line.emotion}・受介入影響`,
+    })),
+    decisions: beat.decisions.map(decision => ({
+      ...decision,
+      because: `${decision.because}；本輪同時受到導演指令「${event.slice(0, 60)}」影響`,
+    })),
+    director_event: event,
+    emotions: Object.fromEntries(Object.entries(beat.emotions).map(([id, em], index) => [
+      id,
+      shiftForIntervention(em, kind, index === 0),
+    ])),
+  }
+}
+
 // ─── Local report generation ──────────────────────────────────────────────────
 
 function generateLocalReport(prompt) {
@@ -372,21 +529,21 @@ function generateLocalReport(prompt) {
 // ─── Main generation function ─────────────────────────────────────────────────
 
 function generateLocal(systemPrompt, intervention) {
-  const hasManualIntervention = intervention &&
-    !intervention.includes('繼續推進') &&
-    !intervention.includes('只輸出JSON')
+  const eventText = cleanLocalIntervention(intervention)
+  const hasManualIntervention = eventText && !eventText.includes('繼續推進')
 
   const isDefault = isDefaultStory(systemPrompt)
 
-  // ── Manual director intervention overrides the current beat ──
+  // ── Manual director intervention adjusts the current linear beat ──
   if (hasManualIntervention && isDefault) {
-    const key = Object.keys(MANUAL_INTERVENTIONS).find(k => intervention.includes(k))
-    const script = key ? MANUAL_INTERVENTIONS[key] : pick(GENERIC_INTERVENTION)
+    const beatIndex = Math.min(_round, STORY.length - 1)
+    const script = adaptLinearBeat(STORY[beatIndex], eventText)
+    _round++
     return {
       narration: script.narration,
       lines: script.lines,
-      decisions: script.lines.map(l => ({ char: l.char, intent: '對突發事件反應', because: '導演指令觸發' })),
-      director_effect: script.effect || `導演指令「${intervention}」已觸發。`,
+      decisions: script.decisions,
+      director_effect: `導演指令「${eventText}」調整了第 ${beatIndex + 1} 段線性劇本的台詞與情緒。`,
       emotions: script.emotions,
     }
   }
@@ -410,26 +567,39 @@ function generateLocal(systemPrompt, intervention) {
 
   // ── Generic characters (custom setup) ──
   const ids = extractCharIds(systemPrompt)
+  const chars = extractCharacters(systemPrompt)
   const cur = extractEmotions(systemPrompt)
-  const count = Math.random() < 0.35 ? 1 : Math.random() < 0.6 ? 2 : Math.min(3, ids.length)
-  const speakers = [...ids].sort(() => Math.random() - 0.5).slice(0, count)
+  const kind = interventionKind(eventText)
+  const mentionedIds = ids.filter(id => chars[id]?.name && eventText.includes(chars[id].name))
+  const count = hasManualIntervention ? Math.min(3, Math.max(1, mentionedIds.length || 2)) : Math.random() < 0.35 ? 1 : Math.random() < 0.6 ? 2 : Math.min(3, ids.length)
+  const speakers = hasManualIntervention
+    ? [...new Set([...mentionedIds, ...ids])].slice(0, count)
+    : [...ids].sort(() => Math.random() - 0.5).slice(0, count)
   const newEm = {}
   for (const id of ids) {
     const e = cur[id] || { anger: 3, fear: 3, trust: 5 }
-    newEm[id] = {
+    newEm[id] = hasManualIntervention ? shiftForIntervention(e, kind, mentionedIds.includes(id)) : {
       anger: clamp(e.anger + (Math.random() < 0.5 ? 1 : -1)),
       fear:  clamp(e.fear  + (Math.random() < 0.5 ? 1 : -1)),
       trust: clamp(e.trust + (Math.random() < 0.5 ? 1 : -1)),
     }
   }
   return {
-    narration: pick(GENERIC_NARRATIONS),
+    narration: hasManualIntervention ? localEventNarration(eventText, kind) : pick(GENERIC_NARRATIONS),
     lines: speakers.map(id => {
       const e = cur[id] || { anger: 3, fear: 3, trust: 5 }
-      return { char: id, line: genericLine(e), emotion: emotionLabel(e) }
+      return {
+        char: id,
+        line: hasManualIntervention ? eventLineFor(chars[id], e, eventText, kind, mentionedIds.includes(id)) : genericLine(e),
+        emotion: hasManualIntervention ? `${emotionLabel(newEm[id])}・受指令牽動` : emotionLabel(e),
+      }
     }),
-    decisions: [],
-    director_effect: hasManualIntervention ? `導演指令「${intervention}」已觸發。` : '',
+    decisions: speakers.map(id => ({
+      char: chars[id]?.name || id,
+      intent: hasManualIntervention ? '回應導演介入造成的新局面' : '延續當前衝突',
+      because: hasManualIntervention ? `本輪導演指令是「${eventText.slice(0, 80)}」` : '依照目前情緒與角色設定自然推進',
+    })),
+    director_effect: hasManualIntervention ? `Local engine 已將導演指令「${eventText.slice(0, 80)}」作為本輪事件核心。` : '',
     emotions: newEm,
   }
 }
