@@ -29,10 +29,15 @@ export default function App() {
       <style>{globalCss}</style>
 
       {screen === 'setup' && (
-        <Setup onStart={(scene, chars, emotions, engine, world) => {
-          setStageProps({ scene, chars, initEmotions: emotions, engine, world })
+        <Setup onStart={async (scene, chars, emotions, engine, world) => {
+          const sessionId = crypto.randomUUID()
+          await fetch('/api/bridge/pending', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, reset: true }),
+          }).catch(() => {})
+          setStageProps({ scene, chars, initEmotions: emotions, engine, world, sessionId })
           setStageKey(k => k + 1)
-          fetch('/api/bridge/pending', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }).catch(() => {})
           setScreen('stage')
         }} />
       )}

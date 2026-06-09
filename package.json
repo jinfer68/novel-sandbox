@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "start:codex": "./start-codex.sh",
     "codex-worker": "node scripts/codex-worker.js",
+    "claude-worker": "node scripts/claude-worker.js",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"

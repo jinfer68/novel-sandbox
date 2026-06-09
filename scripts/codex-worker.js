@@ -70,11 +70,25 @@ function extractJson(text) {
   throw new Error('Codex output did not contain valid JSON')
 }
 
+function extractStageCharIds(systemPrompt = '') {
+  const ids = [...systemPrompt.matchAll(/角色\d+\/([a-z])\(/g)].map(match => match[1])
+  return ids.length ? [...new Set(ids)] : ['a', 'b', 'c']
+}
+
+function buildStageJsonExample(systemPrompt = '') {
+  const ids = extractStageCharIds(systemPrompt)
+  return JSON.stringify({
+    lines: ids.map(id => ({ char: id, line: '台詞', emotion: '情緒標籤' })),
+    emotions: Object.fromEntries(ids.map(id => [id, { anger: 0, fear: 0, trust: 0 }])),
+  })
+}
+
 function buildPrompt(request) {
   const messagesText = (request.messages || [])
     .slice(-6)
     .map(m => `${m.role.toUpperCase()}:\n${m.content}`)
     .join('\n\n')
+  const stageJsonExample = buildStageJsonExample(request.systemPrompt || '')
 
   return `你是這個本地互動小說沙盒的 Codex 生成 worker。
 
@@ -84,9 +98,10 @@ function buildPrompt(request) {
 - 只能輸出一個 JSON object。
 - 不要輸出 Markdown、說明文字或 code fence。
 - 若是舞台對話，格式必須是：
-{"lines":[{"char":"a","line":"台詞","emotion":"情緒標籤"},{"char":"b","line":"台詞","emotion":"情緒標籤"},{"char":"c","line":"台詞","emotion":"情緒標籤"}],"emotions":{"a":{"anger":0,"fear":0,"trust":0},"b":{"anger":0,"fear":0,"trust":0},"c":{"anger":0,"fear":0,"trust":0}}}
+${stageJsonExample}
 - 若是情節建議書，格式必須是：
-{"summary":"...","arcs":[{"char":"...","arc":"..."}],"paths":[{"label":"...","desc":"..."}],"tension":"..."}
+{"summary":"...","prose":"...","arcs":[{"char":"...","arc":"..."}],"usable_lines":["..."],"paths":[{"label":"...","desc":"..."}],"tension":"...","comics":[{"title":"...","shot":"...","caption":"...","dialogue":"...","palette":"...","prompt":"..."}]}
+- 情節建議書的 comics 必須剛好 3 張，根據已發生劇情做連續漫畫畫格，不要只是重述三條岔路。
 - 情緒值必須是 0 到 10 的整數。
 - 不要呼叫工具，不要讀寫檔案，只產生 JSON。
 

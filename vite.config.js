@@ -5,6 +5,7 @@ import fs from 'fs'
 const PENDING_FILE = '/tmp/novel-sandbox-pending.json'
 const QUEUE_FILE = '/tmp/novel-sandbox-queue.json'
 const LOCAL_ENGINE_ENABLED = process.env.NOVEL_SANDBOX_ENGINE === 'local'
+const QUEUE_TTL_MS = Number(process.env.NOVEL_SANDBOX_QUEUE_TTL_MS || 10 * 60 * 1000)
 
 const CHAR_IDS = ['a', 'b', 'c']
 
@@ -31,7 +32,47 @@ function writeQueue(queue) {
   fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue))
 }
 
+function wrapQueueEntry(response, pending = {}) {
+  return {
+    response,
+    sessionId: pending.sessionId || null,
+    ts: Date.now(),
+  }
+}
+
+function unwrapQueueEntry(entry) {
+  if (entry && entry.response) {
+    return {
+      response: entry.response,
+      sessionId: entry.sessionId || null,
+      ts: Number(entry.ts || 0),
+    }
+  }
+
+  return {
+    response: entry,
+    sessionId: entry?.__sessionId || null,
+    ts: Number(entry?.__ts || 0),
+  }
+}
+
+function pruneQueue(queue, activeSessionId) {
+  const now = Date.now()
+  let changed = false
+  for (const [id, entry] of Object.entries(queue)) {
+    const meta = unwrapQueueEntry(entry)
+    const expired = meta.ts && now - meta.ts > QUEUE_TTL_MS
+    const staleSession = activeSessionId && meta.sessionId && meta.sessionId !== activeSessionId
+    if (expired || staleSession) {
+      delete queue[id]
+      changed = true
+    }
+  }
+  return changed
+}
+
 function sendJson(res, payload) {
+  res.setHeader('Content-Type', 'application/json')
   res.end(JSON.stringify(payload))
 }
 
@@ -280,6 +321,35 @@ function generateReportResponse(request) {
       { label: '兇器回歸', desc: '消失的物件重新出現，但位置不可能成立。' },
     ],
     tension: `${names.b}的禮貌開始破裂，而${names.a}與${names.c}都察覺他知道得太多。`,
+    comics: [
+      {
+        title: '雪夜密室',
+        shot: `遠景俯視密室，${names.a}站在門邊，另外兩人被燈影切開。`,
+        caption: '大雪封住所有出口，也封住每個人的退路。',
+        dialogue: '「現在，誰都別急著離開。」',
+        palette: '冷藍陰影、煤油燈金光、高反差黑線',
+        image: '/novel-sandbox/comics/local-panel-1.png',
+        prompt: `懸疑推理漫畫分鏡，雪夜莊園密室，${names.a}站在門邊審視眾人，冷藍陰影與金色燈光，高反差墨線，緊張構圖`,
+      },
+      {
+        title: '禮貌裂縫',
+        shot: `${names.b}的手指攥緊托盤，微笑維持不住，背景人物模糊。`,
+        caption: '最完美的禮貌，先從指節開始破裂。',
+        dialogue: '「先生，您這句話未免太武斷了。」',
+        palette: '暗金、灰黑、局部紅色壓迫感',
+        image: '/novel-sandbox/comics/local-panel-2.png',
+        prompt: `心理懸疑漫畫特寫，${names.b}攥緊托盤，禮貌微笑出現裂縫，背景人物模糊，暗金灰黑配色，戲劇性陰影`,
+      },
+      {
+        title: '消失的兇器',
+        shot: `${names.c}低頭看見地毯邊緣露出的金屬反光，眾人目光同時轉向她。`,
+        caption: '真相沒有回來，它只是換了藏身處。',
+        dialogue: '「我剛才真的沒有看見它。」',
+        palette: '猩紅點光、低飽和褐色、尖銳白色反光',
+        image: '/novel-sandbox/comics/local-panel-3.png',
+        prompt: `推理漫畫關鍵發現畫格，${names.c}發現地毯邊緣金屬反光，眾人目光壓迫，猩紅點光與低飽和褐色，高張力分鏡`,
+      },
+    ],
   }
 }
 
@@ -306,8 +376,8 @@ function bridgePlugin() {
           req.on('data', d => body += d)
           req.on('end', () => {
             const parsed = safeJsonParse(body, null)
-            // empty body = new game start → clear stale queue and pending
-            if (!parsed || !parsed.id) {
+            // empty/reset body = new game start → clear stale queue and pending
+            if (!parsed || parsed.reset || !parsed.id) {
               fs.writeFileSync(PENDING_FILE, '{}')
               fs.writeFileSync(QUEUE_FILE, '{}')
             } else {
@@ -335,7 +405,7 @@ function bridgePlugin() {
             const id = payload?.id || pending?.id || '__legacy'
             const response = payload?.response || payload
             const queue = readQueue()
-            queue[id] = response
+            queue[id] = wrapQueueEntry(response, pending)
             writeQueue(queue)
             fs.writeFileSync(PENDING_FILE, '{}')
             res.end('ok')
@@ -352,9 +422,13 @@ function bridgePlugin() {
         try {
           const url = new URL(req.url || '', 'http://localhost')
           const id = url.searchParams.get('id') || '__legacy'
+          const sessionId = url.searchParams.get('sessionId') || null
           const queue = readQueue()
-          const payload = queue[id] || (!url.searchParams.has('id') ? queue.__legacy : null)
-          if (payload && (payload.lines || payload.summary)) {
+          if (pruneQueue(queue, sessionId)) writeQueue(queue)
+          const entry = queue[id] || (!url.searchParams.has('id') ? queue.__legacy : null)
+          const meta = unwrapQueueEntry(entry)
+          const payload = meta.response
+          if (payload && (payload.lines || payload.summary) && (!sessionId || !meta.sessionId || meta.sessionId === sessionId)) {
             delete queue[id]
             if (id === '__legacy') delete queue.__legacy
             writeQueue(queue)
@@ -375,6 +449,7 @@ function bridgePlugin() {
           res.writeHead(204); res.end()
         }
       })
+
     },
   }
 }

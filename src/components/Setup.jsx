@@ -706,6 +706,7 @@ export default function Setup({ onStart }) {
           <textarea
             value={scene} rows={3}
             onChange={e => setScene(e.target.value)}
+            placeholder="描述這場戲的地點、時間與氛圍，或透過上方文字匯入自動填入"
             style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, color: T.text, fontSize: 13, padding: '0.3rem 0', outline: 'none', resize: 'none', lineHeight: 1.6 }}
           />
         </div>

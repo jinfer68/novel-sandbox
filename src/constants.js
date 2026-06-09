@@ -1,9 +1,9 @@
 export const TIMER_MAX = 30
 
 export const ENGINE_TIMER_MAX = {
-  'claude-code': 30,
+  'claude-code': 45,
   codex: 30,
-  local: 30,
+  local: 10,
 }
 
 export const CHAR_IDS = ['a', 'b', 'c']

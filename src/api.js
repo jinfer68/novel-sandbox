@@ -337,6 +337,35 @@ function generateLocalReport(prompt) {
       { label: '三十年的細節', desc: '林威廉說出那三十年裡發生的事，每個細節都讓動機更清晰，也更令人無法簡單定義' },
       { label: '蘇艾倫的遺囑', desc: '她坦承了改遺囑，但遺囑內容是什麼？那份文件還存在嗎？' },
     ],
+    comics: [
+      {
+        title: '暗格被撬開',
+        shot: `壁爐旁暗格被撬開，${charA}蹲在暗格前，${charB}手藏身後，${charC}臉色慘白後退。`,
+        caption: '暗格開啟的瞬間，房間裡的每個人都多了一個秘密。',
+        dialogue: '「這個撬痕不是第一次出現。」',
+        palette: '冷灰陰影、火橘壁爐光、金屬反光',
+        image: '/novel-sandbox/comics/local-panel-1.png',
+        prompt: `近現代推理懸疑漫畫，雪夜莊園密室，壁爐旁暗格被撬開，低角度構圖，三人形成三角張力：${charA}蹲在暗格前，${charB}站得筆直卻手藏身後，${charC}臉色慘白後退半步。畫面有火光、灰白粉末、金屬撬痕與壓迫感，寫實分鏡，細膩表情，冷灰與火橘光影對比強烈。`,
+      },
+      {
+        title: '袖口粉末',
+        shot: `${charB}袖口邊緣沾著極淡灰白粉末，${charA}從畫面左側切入，${charC}在背景盯著粉末。`,
+        caption: '最小的粉末，比最大的謊言更難擦乾淨。',
+        dialogue: '「林先生，你袖口上的是什麼？」',
+        palette: '窗外雪光、灰白粉末、壓抑冷色',
+        image: '/novel-sandbox/comics/local-panel-2.png',
+        prompt: `連續漫畫第二格，特寫${charB}袖口邊緣沾著極淡灰白粉末，${charA}從畫面左側切入，眼神銳利，${charC}在背景失焦地盯著粉末。室內寒意明顯，窗外雪光透進來，莊園走廊陰影延伸，鏡頭緊迫，寫實懸疑風格，細節清楚，壓抑感強。`,
+      },
+      {
+        title: '走廊的金屬聲',
+        shot: `長走廊盡頭有金屬碰撞的反光，門縫滲入冷風，三人同時僵住。`,
+        caption: '真正的線索，不在房間裡等人看見。',
+        dialogue: '「你們聽見了嗎？」',
+        palette: '雪夜冷光、高對比陰影、遠處金屬反光',
+        image: '/novel-sandbox/comics/local-panel-3.png',
+        prompt: `連續漫畫第三格，長走廊透視，門外雪壓窗框，門縫滲入冷風，遠處有一點金屬碰撞的反光，三人同時僵住。${charA}半轉身，${charB}背手克制，${charC}緊盯前方，氣氛封閉、猜忌、壓迫。高對比陰影、雪夜冷光、電影感分鏡，寫實漫畫風。`,
+      },
+    ],
   }
 }
 
@@ -411,6 +440,7 @@ export async function callClaude(messages, systemPrompt = '', options = {}) {
   const lastUser = [...messages].reverse().find(m => m.role === 'user')
   const intervention = lastUser?.content || '繼續推進對話'
   const engine = options.engine || 'claude-code'
+  const sessionId = options.sessionId || null
 
   if (engine === 'local') {
     await new Promise(r => setTimeout(r, 700 + Math.random() * 400))
@@ -425,16 +455,19 @@ export async function callClaude(messages, systemPrompt = '', options = {}) {
   }
 
   const id = crypto.randomUUID()
+  options.onRequest?.(id)
   await fetch('/api/bridge/pending', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, engine, intervention, systemPrompt, messages, ts: Date.now() }),
+    body: JSON.stringify({ id, sessionId, engine, intervention, systemPrompt, messages, ts: Date.now() }),
   })
 
   const start = Date.now()
   while (Date.now() - start < 300000) {
     await new Promise(r => setTimeout(r, 500))
-    const res = await fetch(`/api/bridge/queue?id=${encodeURIComponent(id)}`)
+    const params = new URLSearchParams({ id })
+    if (sessionId) params.set('sessionId', sessionId)
+    const res = await fetch(`/api/bridge/queue?${params.toString()}`)
     if (res.status === 200) {
       const payload = await res.json()
       return { parsed: payload, raw: JSON.stringify(payload) }

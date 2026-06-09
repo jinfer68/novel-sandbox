@@ -66,8 +66,15 @@ function buildWorldText(world) {
 導演備註：${world.director_notes || ''}`
 }
 
-export default function Stage({ scene, chars, initEmotions, engine = 'claude-code', world, onReset, onReport }) {
+function engineLabel(engine) {
+  if (engine === 'codex') return 'Codex'
+  if (engine === 'claude-code') return 'Claude Code'
+  return 'Local'
+}
+
+export default function Stage({ scene, chars, initEmotions, engine = 'claude-code', world, sessionId, onReset, onReport }) {
   const timerMax = ENGINE_TIMER_MAX[engine] || TIMER_MAX
+  const activeEngineLabel = engineLabel(engine)
   const charIds = Object.keys(chars)
   const [msgs, setMsgs] = useState([{ type: 'system', text: '演出開始，角色進入場景……' }])
   const [emotions, setEmotions] = useState(initEmotions)
@@ -79,6 +86,7 @@ export default function Stage({ scene, chars, initEmotions, engine = 'claude-cod
   const [showDebug, setShowDebug] = useState(false)
   const [customCmd, setCustomCmd] = useState('')
   const [dirCmds, setDirCmds] = useState(() => pickDirectorCmds(4))
+  const [queuedCmd, setQueuedCmd] = useState('')
 
   const histRef = useRef([])
   const emotionsRef = useRef(initEmotions)
@@ -86,6 +94,10 @@ export default function Stage({ scene, chars, initEmotions, engine = 'claude-cod
   const busyRef = useRef(false)
   const feedRef = useRef(null)
   const queuedIntervention = useRef(null)
+  const runSeqRef = useRef(0)
+  const activeRunSeqRef = useRef(0)
+  const mountedRef = useRef(true)
+  const doRoundRef = useRef(null)
 
   emotionsRef.current = emotions
   pausedRef.current = paused
@@ -112,7 +124,7 @@ ${characterText}
 嚴格只輸出以下JSON，不含任何其他文字：
 {"narration":"旁白敘事，可空字串","lines":[{"char":"${charIds[0] || 'a'}","line":"台詞","emotion":"情緒標籤"}],"decisions":[{"char":"角色名","intent":"本輪行動意圖","because":"依據設定或事件的可讀理由"}],"director_effect":"導演指令如何影響本輪，可空字串","emotions":{${charIds.map(id => `"${id}":{"anger":0,"fear":0,"trust":0}`).join(',')}}}
 
-規則：每輪可讓1到${Math.min(3, charIds.length)}名最適合的角色發言；台詞符合性格語氣、有衝突張力、1~3句、秘密不輕易揭露、情緒值±1~2。只輸出JSON。`
+規則：每輪可讓1到${charIds.length}名最適合的角色發言；所有角色都可被選中，若導演介入點名某角色，該角色必須有反應；台詞符合性格語氣、有衝突張力、1~3句、秘密不輕易揭露、情緒值±1~2。只輸出JSON。`
   }, [scene, chars, charIds, world])
 
   const doRound = useCallback(async (intervention) => {
@@ -120,6 +132,7 @@ ${characterText}
       // queue director interventions instead of dropping them
       if (intervention) {
         queuedIntervention.current = intervention
+        setQueuedCmd(intervention)
         log(`queued: ${intervention.slice(0, 20)}`)
       }
       return
@@ -127,8 +140,12 @@ ${characterText}
     // pick up any queued intervention
     const effectiveIntervention = intervention || queuedIntervention.current
     queuedIntervention.current = null
+    setQueuedCmd('')
     setBusy(true)
     busyRef.current = true
+    const runSeq = runSeqRef.current + 1
+    runSeqRef.current = runSeq
+    activeRunSeqRef.current = runSeq
     log(`Round start${effectiveIntervention ? ` [介入: ${effectiveIntervention.slice(0, 20)}]` : ''}`)
 
     const hist = histRef.current
@@ -139,12 +156,20 @@ ${characterText}
     })
 
     const userMsg = effectiveIntervention
-      ? `【導演介入】${effectiveIntervention}\n根據此事件讓三角色反應，只輸出JSON。`
+      ? `【導演介入】${effectiveIntervention}\n根據此事件讓所有相關角色反應；若指令點名某角色，該角色必須有台詞或旁白反應。只輸出JSON。`
       : '繼續推進對話，只輸出JSON。'
     messages.push({ role: 'user', content: userMsg })
 
     try {
-      const { parsed, raw } = await callClaude(messages, buildSystem(), { engine })
+      const { parsed, raw } = await callClaude(messages, buildSystem(), {
+        engine,
+        sessionId,
+        onRequest: id => log(`request: ${id.slice(0, 8)}`),
+      })
+      if (!mountedRef.current || activeRunSeqRef.current !== runSeq) {
+        log(`stale response ignored: run ${runSeq}`)
+        return
+      }
       log(`OK: ${raw.slice(0, 80)}`)
 
       hist.push({ q: userMsg, a: raw })
@@ -179,29 +204,51 @@ ${characterText}
       }
     } catch (e) {
       log(`ERROR: ${e.message}`)
-      addMsg({ type: 'system', text: `⚠ 第${round + 1}輪失敗：${e.message.slice(0, 100)}` })
-    }
+      if (mountedRef.current && activeRunSeqRef.current === runSeq) {
+        addMsg({ type: 'system', text: `⚠ 第${round + 1}輪失敗：${e.message.slice(0, 100)}` })
+      } else {
+        log(`stale error ignored: run ${runSeq}`)
+      }
+    } finally {
+      if (mountedRef.current && activeRunSeqRef.current === runSeq) {
+        setBusy(false)
+        busyRef.current = false
+        setTimer(timerMax)
 
-    setBusy(false)
-    busyRef.current = false
-    setTimer(timerMax)
-  }, [buildSystem, chars, addMsg, round, engine, timerMax, charIds])
+        if (queuedIntervention.current) {
+          window.setTimeout(() => doRoundRef.current?.(null), 0)
+        }
+      } else if (!mountedRef.current || activeRunSeqRef.current === -1) {
+        busyRef.current = false
+      }
+    }
+  }, [buildSystem, chars, addMsg, round, engine, sessionId, timerMax, charIds])
+
+  doRoundRef.current = doRound
 
   useEffect(() => {
+    mountedRef.current = true
     if (engine === 'local') resetLocalEngine()
     doRound(null)
+    return () => {
+      mountedRef.current = false
+      activeRunSeqRef.current = -1
+      busyRef.current = false
+    }
   }, [])
 
   useEffect(() => {
-    const iv = setInterval(() => {
-      if (pausedRef.current || busyRef.current) return
-      setTimer(t => {
-        if (t <= 1) { doRound(null); return timerMax }
-        return t - 1
-      })
+    if (paused || busy) return
+    if (timer <= 0) {
+      doRoundRef.current?.(null)
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setTimer(t => Math.max(0, t - 1))
     }, 1000)
-    return () => clearInterval(iv)
-  }, [doRound])
+    return () => window.clearTimeout(timeout)
+  }, [paused, busy, timer])
 
   const intervene = (cmd) => {
     addMsg({ type: 'director', text: cmd })
@@ -268,16 +315,48 @@ ${characterText}
           <div>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: T.text3, textTransform: 'uppercase', marginBottom: 6, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>下一輪</div>
             <div style={{ textAlign: 'center', background: T.bg3, borderRadius: 6, border: `1px solid ${T.border}`, padding: '0.65rem' }}>
-              <div style={{ fontFamily: 'monospace', fontSize: '1.8rem', color: T.accent, lineHeight: 1 }}>{String(timer).padStart(2, '0')}</div>
-              <div style={{ fontSize: 9, color: T.text3, marginTop: 2 }}>{busy ? '生成中…' : paused ? '已暫停' : '秒後自動推進'}</div>
+              <div style={{ fontFamily: 'monospace', fontSize: '1.8rem', color: busy ? T.text3 : T.accent, lineHeight: 1 }}>
+                {busy ? '…' : String(timer).padStart(2, '0')}
+              </div>
+              <div style={{ fontSize: 9, color: busy ? T.amber : T.text3, marginTop: 2, fontWeight: busy ? 600 : 400 }}>
+                {busy ? `${activeEngineLabel} 生成中` : paused ? '已暫停' : timer <= 0 ? '準備下一輪' : '秒後自動推進'}
+              </div>
               <div style={{ height: 2, background: 'rgba(255,255,255,.08)', borderRadius: 1, marginTop: 6, overflow: 'hidden' }}>
-                <div style={{ width: `${(timer / timerMax) * 100}%`, height: '100%', background: T.accent, transition: 'width 1s linear' }} />
+                <div style={{
+                  width: busy ? '100%' : `${(timer / timerMax) * 100}%`,
+                  height: '100%',
+                  background: busy ? T.amber : T.accent,
+                  transition: busy ? 'none' : 'width 1s linear',
+                  animation: busy ? 'pulse-bar 1.5s ease-in-out infinite' : 'none',
+                  opacity: busy ? undefined : 1,
+                }} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.text3, marginTop: 4 }}>
               <span>第 {round} 輪</span>
               <span style={{ color: paused ? T.text3 : T.teal }}>{paused ? '暫停中' : '演出中'}</span>
             </div>
+            {queuedCmd && (
+              <div style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: T.amber }}>
+                已排入下一輪：{queuedCmd.length > 18 ? `${queuedCmd.slice(0, 18)}...` : queuedCmd}
+              </div>
+            )}
+            <button
+              onClick={() => doRound(null)}
+              disabled={busy}
+              style={{
+                width: '100%',
+                marginTop: 8,
+                padding: '0.45rem 0.55rem',
+                background: busy ? T.bg3 : 'transparent',
+                border: `1px solid ${busy ? T.border : T.border2}`,
+                borderRadius: 5,
+                color: busy ? T.text3 : T.accent,
+                fontSize: 10,
+                cursor: busy ? 'default' : 'pointer',
+              }}>
+              立即下一輪
+            </button>
           </div>
 
           {/* emotions */}
